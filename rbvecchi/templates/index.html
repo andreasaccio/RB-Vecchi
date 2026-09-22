@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RB-Vecchi">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <title>{{ app_name }}</title>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Casa</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <div class="top-actions">
+        <span id="connectionPill" class="pill pill-muted">Connessione…</span>
+        <form method="post" action="/logout">
+          <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
+          </button>
+        </form>
+      </div>
+    </header>
+
+    <main>
+      <section id="garageCard" class="garage-card state-unknown" aria-live="polite">
+        <div class="garage-visual" aria-hidden="true">
+          <svg class="garage-icon" viewBox="0 0 160 120">
+            <path class="garage-house" d="M12 55 80 12l68 43v53H12z"/>
+            <path class="garage-frame" d="M33 55h94v53H33z"/>
+            <path class="garage-door" d="M39 62h82v40H39z"/>
+            <path class="garage-lines" d="M39 72h82M39 82h82M39 92h82"/>
+            <circle class="garage-handle" cx="80" cy="95" r="3"/>
+          </svg>
+        </div>
+        <div class="garage-copy">
+          <p class="section-label">Basculante garage</p>
+          <div class="status-row">
+            <span id="statusDot" class="status-dot"></span>
+            <h2 id="garageState">Stato non disponibile</h2>
+          </div>
+          <p id="stateSince" class="state-since">In attesa della prima lettura…</p>
+          <p id="staleWarning" class="stale-warning hidden"></p>
+        </div>
+      </section>
+
+      <section class="command-card">
+        <button id="pulseButton" class="primary-button" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v2h10V4h2v16h-2v-2H7v2H5V4h2zm0 4v8h10V8H7zm2 2h6v2H9v-2z"/></svg>
+          <span>Comanda basculante</span>
+        </button>
+        <p>Invia un impulso passo-passo di sicurezza al relè Shelly.</p>
+      </section>
+
+      <section class="metrics-grid" aria-label="Metriche garage">
+        <article class="metric-card">
+          <span class="metric-label">Aperture oggi</span>
+          <strong id="openingsToday">—</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Aperto oggi</span>
+          <strong id="openTimeToday">—</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Wi-Fi Shelly</span>
+          <strong id="wifiSignal">—</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Temperatura</span>
+          <strong id="temperature">—</strong>
+        </article>
+      </section>
+
+      <section class="details-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Dispositivo</p>
+            <h3>Shelly 1 Gen3</h3>
+          </div>
+          <button id="refreshButton" class="secondary-button" type="button">Aggiorna</button>
+        </div>
+        <dl class="details-list">
+          <div><dt>Indirizzo</dt><dd>{{ shelly_address }}</dd></div>
+          <div><dt>Relè</dt><dd id="relayOutput">—</dd></div>
+          <div><dt>Input mode</dt><dd id="inputMode">—</dd></div>
+          <div><dt>Uptime</dt><dd id="shellyUptime">—</dd></div>
+          <div><dt>Ultimo aggiornamento</dt><dd id="lastUpdate">—</dd></div>
+          <div><dt>Avviso apertura</dt><dd>dopo {{ alert_minutes }} minuti</dd></div>
+          <div><dt>Telegram</dt><dd id="telegramState">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="history-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Registro eventi</p>
+            <h3>Aperture e chiusure</h3>
+          </div>
+          <span class="history-badge">ultimi 50</span>
+        </div>
+        <div id="eventList" class="event-list">
+          <p class="empty-state">Caricamento storico…</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>RB-Vecchi</span>
+      <span id="footerClock">—</span>
+    </footer>
+  </div>
+
+  <dialog id="commandDialog" class="command-dialog">
+    <form method="dialog">
+      <div class="dialog-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 1 21h22L12 2zm0 5 6.9 12H5.1L12 7zm-1 3v5h2v-5h-2zm0 7v2h2v-2h-2z"/></svg>
+      </div>
+      <h3>Inviare il comando?</h3>
+      <p id="dialogText">Il basculante riceverà un impulso passo-passo.</p>
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel">Annulla</button>
+        <button id="confirmPulseButton" class="danger-button" value="default">Invia impulso</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

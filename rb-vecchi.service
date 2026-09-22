@@ -1,0 +1,28 @@
+[Unit]
+Description=RB-Vecchi Garage Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rbvecchi
+Group=rbvecchi
+WorkingDirectory=/opt/rb-vecchi
+EnvironmentFile=/etc/rb-vecchi.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+ExecStart=/opt/rb-vecchi/start.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rb-vecchi
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
