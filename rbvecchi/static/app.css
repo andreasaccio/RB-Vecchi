@@ -173,7 +173,7 @@ main { display: grid; gap: 16px; }
 }
 
 .primary-button:active, .secondary-button:active, .danger-button:active { transform: scale(0.98); }
-.primary-button:disabled { cursor: not-allowed; opacity: 0.45; }
+.primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .primary-button {
   display: inline-flex;
@@ -213,6 +213,9 @@ main { display: grid; gap: 16px; }
 .details-list div { display: flex; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
 .details-list dt { color: var(--muted); }
 .details-list dd { margin: 0; text-align: right; font-weight: 700; }
+.telegram-test-result { margin: 0; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+.telegram-test-result.success { color: var(--success); font-weight: 700; }
+.telegram-test-result.error { color: var(--danger); font-weight: 700; }
 
 .event-list { display: grid; }
 .event-item { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }

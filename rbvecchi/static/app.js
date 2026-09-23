@@ -22,6 +22,8 @@ const elements = {
   telegramState: document.getElementById("telegramState"),
   eventList: document.getElementById("eventList"),
   refreshButton: document.getElementById("refreshButton"),
+  telegramTestButton: document.getElementById("telegramTestButton"),
+  telegramTestResult: document.getElementById("telegramTestResult"),
   footerClock: document.getElementById("footerClock"),
   toast: document.getElementById("toast"),
 };
@@ -252,6 +254,37 @@ async function sendPulse() {
   }
 }
 
+const TELEGRAM_TEST_COOLDOWN_MS = 30000;
+
+function showTelegramResult(message, isError) {
+  elements.telegramTestResult.textContent = message;
+  elements.telegramTestResult.classList.toggle("success", !isError);
+  elements.telegramTestResult.classList.toggle("error", isError);
+}
+
+async function sendTelegramTest() {
+  elements.telegramTestButton.disabled = true;
+  elements.telegramTestResult.classList.remove("success", "error");
+  elements.telegramTestResult.textContent = "Invio in corso…";
+  let reenableAfter = TELEGRAM_TEST_COOLDOWN_MS;
+  try {
+    const payload = await apiFetch("/api/telegram/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    });
+    const message = payload.message || "Messaggio di prova inviato";
+    showTelegramResult(`${message} (${formatDateTime(Date.now() / 1000)})`, false);
+    showToast(message);
+  } catch (error) {
+    const message = error.message || "Test Telegram non riuscito";
+    showTelegramResult(message, true);
+    showToast(message, true);
+    reenableAfter = 2500;
+  } finally {
+    setTimeout(() => { elements.telegramTestButton.disabled = false; }, reenableAfter);
+  }
+}
+
 elements.pulseButton?.addEventListener("click", () => {
   const state = latestStatus?.garage_open;
   elements.dialogText.textContent = state === true
@@ -267,6 +300,7 @@ elements.commandDialog?.addEventListener("close", () => {
 });
 
 elements.refreshButton?.addEventListener("click", () => loadDashboard(true));
+elements.telegramTestButton?.addEventListener("click", sendTelegramTest);
 
 function updateClock() {
   elements.footerClock.textContent = new Intl.DateTimeFormat("it-IT", {

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hmac
 import logging
+import math
 import secrets
+import threading
 import time
 from datetime import datetime, time as dt_time
 from functools import wraps
@@ -22,10 +24,18 @@ from flask import (
 from .config import Settings, load_settings
 from .db import Database
 from .monitor import GarageMonitor
-from .notifier import TelegramNotifier
+from .notifier import TelegramError, TelegramNotifier
 from .shelly import ShellyClient
 
 LOGGER = logging.getLogger(__name__)
+
+TELEGRAM_TEST_COOLDOWN_SECONDS = 30.0
+
+TELEGRAM_ERROR_HINTS = {
+    401: "Token del bot non valido: controllare TELEGRAM_BOT_TOKEN.",
+    403: "Il bot non può scrivere nella chat: è stato rimosso dal gruppo o bloccato.",
+    429: "Troppi messaggi inviati: riprovare più tardi.",
+}
 
 
 def create_app(settings: Settings | None = None, start_monitor: bool = True) -> Flask:
@@ -74,6 +84,12 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
             token = secrets.token_urlsafe(32)
             session["csrf_token"] = token
         return token
+
+    def require_csrf() -> None:
+        supplied = request.headers.get("X-CSRF-Token", "")
+        expected = session.get("csrf_token", "")
+        if not supplied or not expected or not hmac.compare_digest(supplied, expected):
+            abort(403)
 
     def login_required(view):
         @wraps(view)
@@ -142,6 +158,7 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
             csrf_token=ensure_csrf(),
             alert_minutes=max(1, settings.open_alert_seconds // 60),
             shelly_address=settings.shelly_host.replace("http://", "").replace("https://", ""),
+            telegram_enabled=settings.telegram_enabled,
         )
 
     @app.get("/api/dashboard")
@@ -180,16 +197,94 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
     @app.post("/api/garage/pulse")
     @login_required
     def api_pulse():
-        supplied = request.headers.get("X-CSRF-Token", "")
-        expected = session.get("csrf_token", "")
-        if not supplied or not expected or not hmac.compare_digest(supplied, expected):
-            abort(403)
+        require_csrf()
         try:
             monitor.pulse()
         except Exception as exc:
             LOGGER.warning("Comando garage rifiutato o fallito: %s", exc)
             return jsonify({"ok": False, "error": str(exc)}), 503
         return jsonify({"ok": True, "message": "Impulso inviato al basculante"})
+
+    telegram_test_lock = threading.Lock()
+    last_telegram_test_at = -TELEGRAM_TEST_COOLDOWN_SECONDS
+
+    def telegram_test_message() -> str:
+        # Usa solo lo snapshot in memoria: il test non interroga lo Shelly.
+        tz = ZoneInfo(settings.timezone)
+        now = datetime.now(tz)
+        status = monitor.snapshot()
+        lines = [f"🧪 Test RB-Vecchi — {now:%d/%m/%Y %H:%M:%S}"]
+        state = {True: "aperto", False: "chiuso"}.get(status["garage_open"])
+        if status["online"] and state:
+            if status["state_duration_seconds"] is not None:
+                duration = GarageMonitor._format_duration(status["state_duration_seconds"])
+                lines.append(f"Basculante: {state} da {duration}.")
+            else:
+                lines.append(f"Basculante: {state}.")
+        else:
+            lines.append("Basculante: stato non disponibile, Shelly non raggiungibile.")
+            if status["last_success"] is not None and state:
+                last = datetime.fromtimestamp(status["last_success"], tz)
+                ago = GarageMonitor._format_duration(status["stale_seconds"] or 0)
+                lines.append(
+                    f"Ultima lettura valida: {state}, alle {last:%H:%M del %d/%m} ({ago} fa)."
+                )
+            elif state:
+                lines.append(f"Ultimo stato registrato: {state}.")
+        lines.append("Messaggio di prova inviato dalla dashboard.")
+        return "\n".join(lines)
+
+    @app.post("/api/telegram/test")
+    @login_required
+    def api_telegram_test():
+        nonlocal last_telegram_test_at
+        require_csrf()
+        if not notifier.enabled:
+            return (
+                jsonify({"ok": False, "error": "Telegram non configurato: token o chat ID mancanti"}),
+                409,
+            )
+        now = time.monotonic()
+        with telegram_test_lock:
+            remaining = TELEGRAM_TEST_COOLDOWN_SECONDS - (now - last_telegram_test_at)
+            if remaining > 0:
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "error": f"Attendere {math.ceil(remaining)} s prima di un nuovo test",
+                            "retry_after": math.ceil(remaining),
+                        }
+                    ),
+                    429,
+                )
+            last_telegram_test_at = now
+
+        try:
+            notifier.send(telegram_test_message())
+        except TelegramError as exc:
+            if exc.error_code != 429:
+                with telegram_test_lock:
+                    last_telegram_test_at = -TELEGRAM_TEST_COOLDOWN_SECONDS
+            LOGGER.warning("Test Telegram fallito: %s", exc)
+            hint = TELEGRAM_ERROR_HINTS.get(exc.error_code)
+            if exc.error_code == 400 and "chat not found" in exc.description.lower():
+                hint = "Chat inesistente o bot mai avviato in quella chat: controllare TELEGRAM_CHAT_ID."
+            error = f"{exc} — {hint}" if hint else str(exc)
+            status_code = 502 if exc.error_code is not None else 504
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": error,
+                        "telegram_error_code": exc.error_code,
+                        "telegram_description": exc.description,
+                    }
+                ),
+                status_code,
+            )
+        LOGGER.info("Test Telegram inviato dalla dashboard")
+        return jsonify({"ok": True, "message": "Messaggio di prova consegnato a Telegram"})
 
     @app.get("/healthz")
     def healthz():

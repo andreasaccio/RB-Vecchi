@@ -99,6 +99,21 @@
         </dl>
       </section>
 
+      <section class="details-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Notifiche</p>
+            <h3>Test Telegram</h3>
+          </div>
+          <button id="telegramTestButton" class="secondary-button" type="button"{% if not telegram_enabled %} disabled{% endif %}>Invia test</button>
+        </div>
+        {% if telegram_enabled %}
+        <p id="telegramTestResult" class="telegram-test-result">Invia un messaggio di prova con data, ora e stato del basculante.</p>
+        {% else %}
+        <p id="telegramTestResult" class="telegram-test-result">Telegram non configurato: impostare TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID in /etc/rb-vecchi.env e riavviare il servizio.</p>
+        {% endif %}
+      </section>
+
       <section class="history-card">
         <div class="section-heading">
           <div>
