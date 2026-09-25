@@ -19,6 +19,8 @@ Il 2026-09-24 i due adattatori TP-Link sono stati sostituiti da due
 | Casa   | 192.168.1.66 | firmware 1.03 (da schermata) [M/A]     |
 | Garage | 192.168.1.67 | firmware 1.04 b01, 11 Dec 2013 [M]     |
 
+Gli indirizzi .66, .67, .100 e .101 sono riservati nel DHCP del router [M].
+
 MAC dell'adattatore garage [M]: LAN `b0:c5:54:d6:77:c7`,
 Wi-Fi `b0:c5:54:d6:77:c8`, PLC `b0:c5:54:d6:77:c6`.
 
@@ -46,7 +48,7 @@ un telefono [D].
 
 L'AP dell'adattatore casa (.66) ha la radio accesa ma senza client. Vi è
 stato attivato il filtro MAC con elenco vuoto per chiuderne l'accesso;
-la modalità del filtro (consenti/blocca) va confermata [A].
+verificato: un telefono con la password corretta viene rifiutato [M].
 
 **Conseguenza diagnostica:** l'RSSI dello Shelly misura solo il salto
 dispositivo-AP, due metri nello stesso locale. Resta eccellente (-45/-50 dBm)
@@ -72,7 +74,7 @@ sul Raspberry quando si è sul posto [A].
   password Wi-Fi in chiaro, PIN e password di gestione del PLC compresi.
   Falla nota di questo firmware; una password di amministrazione non la
   chiude. Chiunque sia sulla LAN può leggere la chiave del Wi-Fi [M].
-- WPS abilitato sull'AP garage; da disattivare [M].
+- WPS disattivato sull'AP garage il 25/09 [M].
 - Cifratura Wi-Fi in modalità mista `WPA+2PSK / TKIP+AES`; il TKIP è debole,
   preferibile WPA2 solo AES [M].
 - Rete ospite `dlink_guest` (aperta) presente ma disattivata: ok [M].
@@ -116,7 +118,5 @@ tenuta va confermata su più giorni.
 - [A] `aenergy.total` dello Shelly sopravvive a un blackout (prova col
       magnetotermico a fine carica, sul posto)
 - [A] profilo di potenza della prima carica → soglia carica/mantenimento
-- [A] reservation DHCP per .66 .67 .100 .101 sul router
-- [A] modalità del filtro MAC su .66
 - [A] firmware effettivo di .66 (1.03 vs 1.04)
 - [A] conferma che 7C:A7:B0:40:1D:3B è la telecamera
