@@ -8,8 +8,8 @@ parte rete descrive l'impianto TP-Link rimosso il 24/09); stato della rete del 2
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 57 file; in produzione ne sono installati 23 in /opt/rb-vecchi
-  (vedi install.sh) più 5 in /opt/rb-raccolta (vedi install-raccolta.sh).
+- Il repository contiene 61 file; in produzione ne sono installati 25 in /opt/rb-vecchi
+  (vedi install.sh) più 6 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
 - In produzione INPUT_TRUE_IS_OPEN=false e RELAY_PULSE_SECONDS=0.5, diversi dai default.
@@ -62,7 +62,8 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   dati in /var/lib/rb-raccolta (RB_RACCOLTA_DIR).
 - Un CSV al giorno per raccoglitore (data locale nel nome, intestazione in ogni
   file), ts in secondi epoch. Colonne di rb-carica e rb-plc da non cambiare.
-- Sola lettura verso gli apparati: rb-carica solo Shelly.GetStatus, rb-plc solo
+- Sola lettura verso gli apparati: rb-carica solo Shelly.GetStatus e
+  Shelly.GetDeviceInfo, rb-plc solo
   st_stats.php, rb-link solo ping. Stato ERR di rb-link = ping non eseguibile,
   dato mancante e non KO.
 - rb-link.service ha AmbientCapabilities=CAP_NET_RAW: sul Raspberry
@@ -71,15 +72,29 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
 - Installazione e aggiornamento: sudo ./install-raccolta.sh (idempotente).
   Non riavvia MAI il basculante; update.sh a sua volta non tocca i raccoglitori.
 - In analisi i periodi senza righe sono dati mancanti, né ok né KO.
-- Riepilogo powerline: rb-stato-rete.timer lancia ogni 60 s il oneshot
-  rb-stato-rete.service (stato_rete.py --json), che scrive in modo atomico
-  /var/lib/rb-raccolta/stato-rete.json (0644; directory 0755, leggibile da rbvecchi).
-  Stati: stabile / instabile / interrotta / non_disponibile; le regole stanno
-  tutte in classifica() di raccolta/stato_rete.py.
-- La dashboard legge SOLO quel JSON, in sola lettura, da /api/powerline
-  (rbvecchi/powerline.py): nessuna analisi dentro rbvecchi, nessun effetto su
+- File JSON per la dashboard in /var/lib/rb-raccolta, tutti scritti in modo
+  atomico (giornaliero.scrivi_json_atomico, 0644; directory 0755, leggibili da
+  rbvecchi), ciascuno con il campo "generato":
+  - stato-rete.json: riepilogo powerline delle 24 h (solo 24 h, niente 7 giorni
+    ogni minuto), con i dettagli per adattatore. Stati: stabile / instabile /
+    interrotta / non_disponibile; le regole stanno tutte in classifica() di
+    raccolta/stato_rete.py;
+  - sistema.json: stato del Raspberry (raccolta/sistema.py, solo letture locali);
+  - carica-ultimo.json: ultimo campione dello Shelly ricarica, scritto da
+    rb-carica a ogni campione, con modello e firmware da GetDeviceInfo.
+  I primi due li scrive il oneshot rb-stato-rete.service, lanciato ogni 60 s da
+  rb-stato-rete.timer.
+- rbvecchi legge SOLO file della raccolta in /var/lib/rb-raccolta, in sola
+  lettura (rbvecchi/raccolta.py), da endpoint separati: /api/powerline,
+  /api/carica, /api/sistema. Nessun nuovo client di rete dentro rbvecchi e
+  nessuna chiamata in più allo Shelly .100: per il basculante si usa solo ciò
+  che il monitor legge già. Nessuna analisi in rbvecchi, nessun effetto su
   /api/status, sul monitor o sulle notifiche. File assente, illeggibile, non
-  valido o più vecchio di 5 minuti = "non disponibile".
+  valido o vecchio (carica-ultimo.json 60 s, gli altri 5 minuti) =
+  "non disponibile".
+- Pagine: principale (basculante, powerline, comando, ricarica, statistiche) e
+  /dettagli (Shelly basculante, Shelly ricarica, powerline, Raspberry), con la
+  stessa autenticazione. Nessun segreto nelle pagine.
 - Il Wi-Fi dello Shelly misura solo il salto Shelly-AP, non la salute della
   catena: l'indicatore di rete della dashboard è il riquadro Powerline.
 - Modifiche a static/: cambiare CACHE_NAME in service-worker.js, altrimenti il
@@ -89,7 +104,9 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
 - Shelly 1PM Gen3 (S3SW-001P16EU), firmware 2.0.1. Il caricabatterie è alimentato
   attraverso il relè.
 - Per RB-Vecchi è in SOLA LETTURA: nessuna chiamata che scriva
-  (Switch.Set, Switch.Toggle, SetConfig, Reboot).
+  (Switch.Set, Switch.Toggle, SetConfig, Reboot). Chiamate ammesse:
+  Shelly.GetStatus (rb-carica, ogni 10 s) e Shelly.GetDeviceInfo (rb-carica,
+  all'avvio e poi ogni 6 ore).
 - Relè sempre chiuso. initial_state=on e in_mode=detached sono intenzionali:
   con i valori di fabbrica (match_input, follow) il relè resta aperto dopo
   ogni blackout e la carica non riparte.
