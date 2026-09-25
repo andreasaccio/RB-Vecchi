@@ -56,6 +56,35 @@
         </div>
       </section>
 
+      <section class="command-card">
+        <button id="pulseButton" class="primary-button" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v2h10V4h2v16h-2v-2H7v2H5V4h2zm0 4v8h10V8H7zm2 2h6v2H9v-2z"/></svg>
+          <span>Comanda basculante</span>
+        </button>
+        <p>Invia un impulso passo-passo di sicurezza al relè Shelly.</p>
+      </section>
+
+      <section class="metrics-grid" aria-label="Metriche garage">
+        <article class="metric-card">
+          <span class="metric-label">Aperture oggi</span>
+          <strong id="openingsToday">—</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Aperto oggi</span>
+          <strong id="openTimeToday">—</strong>
+        </article>
+      </section>
+
+      <section id="caricaCard" class="carica-card carica-non_disponibile" aria-live="polite">
+        <div class="powerline-head">
+          <p class="section-label">Ricarica quadriciclo</p>
+          <span id="caricaAge" class="powerline-age"></span>
+        </div>
+        <p class="carica-power"><strong id="caricaPower">—</strong> <span>W</span></p>
+        <p id="caricaNote" class="powerline-reason">In attesa dei dati della ricarica…</p>
+        <p id="caricaWarning" class="carica-warning hidden"></p>
+      </section>
+
       <section id="powerlineCard" class="powerline-card pl-non_disponibile" aria-live="polite">
         <div class="powerline-head">
           <p class="section-label">Powerline casa – garage</p>
@@ -70,35 +99,6 @@
           <div><dt>Disponibilità 24 h</dt><dd id="powerlineAvailability">—</dd></div>
           <div><dt>Ultimo episodio</dt><dd id="powerlineLastEpisode">—</dd></div>
         </dl>
-      </section>
-
-      <section class="command-card">
-        <button id="pulseButton" class="primary-button" type="button" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v2h10V4h2v16h-2v-2H7v2H5V4h2zm0 4v8h10V8H7zm2 2h6v2H9v-2z"/></svg>
-          <span>Comanda basculante</span>
-        </button>
-        <p>Invia un impulso passo-passo di sicurezza al relè Shelly.</p>
-      </section>
-
-      <section id="caricaCard" class="carica-card carica-non_disponibile" aria-live="polite">
-        <div class="powerline-head">
-          <p class="section-label">Ricarica quadriciclo</p>
-          <span id="caricaAge" class="powerline-age"></span>
-        </div>
-        <p class="carica-power"><strong id="caricaPower">—</strong> <span>W</span></p>
-        <p id="caricaNote" class="powerline-reason">In attesa dei dati della ricarica…</p>
-        <p id="caricaWarning" class="carica-warning hidden"></p>
-      </section>
-
-      <section class="metrics-grid" aria-label="Metriche garage">
-        <article class="metric-card">
-          <span class="metric-label">Aperture oggi</span>
-          <strong id="openingsToday">—</strong>
-        </article>
-        <article class="metric-card">
-          <span class="metric-label">Aperto oggi</span>
-          <strong id="openTimeToday">—</strong>
-        </article>
       </section>
 
       <a class="details-link" href="/dettagli">
