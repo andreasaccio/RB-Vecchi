@@ -44,29 +44,45 @@ done
 
 systemctl daemon-reload
 systemctl enable $UNITA
+AVVIO=$(date +%s)
 systemctl restart $UNITA
 
 echo
 ESITO=0
-# Il ping deve riuscire all'utente, e anche con NoNewPrivileges come nell'unità:
-# lì le capability del file /usr/bin/ping non valgono e serve il socket ICMP
-# non privilegiato (net.ipv4.ping_group_range).
 if sudo -u "$SERVICE_USER" ping -c1 -W1 192.168.1.1 >/dev/null 2>&1; then
   echo "ping come $SERVICE_USER: ok"
 else
   echo "ATTENZIONE: $SERVICE_USER non riesce a fare ping a 192.168.1.1" >&2
   ESITO=2
 fi
-if systemd-run --quiet --wait --pipe --collect \
-     -p User="$SERVICE_USER" -p NoNewPrivileges=true \
-     -p RestrictAddressFamilies="AF_UNIX AF_INET AF_INET6" \
-     ping -c1 -W1 192.168.1.1 >/dev/null 2>&1; then
-  echo "ping con le restrizioni dell'unità: ok"
-else
-  echo "ATTENZIONE: con le restrizioni dell'unità il ping fallisce;" \
-       "ping_group_range = $(sysctl -n net.ipv4.ping_group_range 2>/dev/null)." >&2
-  echo "rb-link registrerà ERR (dato mancante), non KO." >&2
+
+# Verifica sull'unità vera: le righe che rb-link ha scritto dopo il riavvio.
+# Nessun ERR ammesso nell'ultimo giro (ERR = ping non eseguibile nell'unità).
+echo "attesa di due giri di rb-link..."
+sleep 12
+GIORNI=$(printf '%s\n%s\n' "$(date -d "@$AVVIO" +%F)" "$(date +%F)" | uniq)
+ULTIMO=$(for g in $GIORNI; do
+           f="$DATA_DIR/rb-link-$g.csv"
+           if [ -r "$f" ]; then cat "$f"; fi
+         done | awk -F, -v da="$AVVIO" '
+  $1 ~ /^[0-9]+$/ && $1 >= da { r[$1] = r[$1] $3 " "; if ($1 > m) m = $1 }
+  END { if (m) print m, r[m] }')
+if [ -z "$ULTIMO" ]; then
+  echo "ATTENZIONE: rb-link non ha scritto righe dopo il riavvio." >&2
   ESITO=2
+else
+  set -- $ULTIMO
+  TS=$1; shift
+  N_ERR=0
+  for s in "$@"; do case $s in ERR) N_ERR=$((N_ERR+1)) ;; esac; done
+  if [ "$N_ERR" -gt 0 ]; then
+    echo "ATTENZIONE: rb-link, ultimo giro ($(date -d "@$TS" +%T)): $N_ERR ERR su $#." \
+         "Il logger è cieco: ping non eseguibile nell'unità." >&2
+    journalctl -u rb-link.service -n 15 --no-pager >&2 || true
+    ESITO=2
+  else
+    echo "rb-link, ultimo giro ($(date -d "@$TS" +%T)): $* -> nessun ERR"
+  fi
 fi
 
 for u in $UNITA; do

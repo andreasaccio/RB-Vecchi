@@ -8,7 +8,7 @@ parte rete descrive l'impianto TP-Link rimosso il 24/09); stato della rete del 2
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 52 file; in produzione ne sono installati 22 in /opt/rb-vecchi
+- Il repository contiene 53 file; in produzione ne sono installati 22 in /opt/rb-vecchi
   (vedi install.sh) più 4 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
@@ -60,6 +60,9 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
 - Sola lettura verso gli apparati: rb-carica solo Shelly.GetStatus, rb-plc solo
   st_stats.php, rb-link solo ping. Stato ERR di rb-link = ping non eseguibile,
   dato mancante e non KO.
+- rb-link.service ha AmbientCapabilities=CAP_NET_RAW: sul Raspberry
+  ping_group_range è "1 0" e con NoNewPrivileges la capability di
+  /usr/bin/ping non vale. Senza, rb-link scrive solo ERR.
 - Installazione e aggiornamento: sudo ./install-raccolta.sh (idempotente).
   Non riavvia MAI il basculante; update.sh a sua volta non tocca i raccoglitori.
 - In analisi i periodi senza righe sono dati mancanti, né ok né KO.

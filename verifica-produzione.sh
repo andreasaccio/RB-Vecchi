@@ -29,19 +29,35 @@ for u in rb-carica rb-plc rb-link; do
   fi
 done
 [ "$m" -eq 0 ] && echo "raccolta allineata al repository"
+# Per ogni raccoglitore: stato dell'unità, età e stato dell'ultima riga (per
+# rb-plc l'ultimo campione di ogni adattatore, per rb-link l'ultimo giro).
+DATI=${RB_RACCOLTA_DIR:-/var/lib/rb-raccolta}
 OGGI=$(date +%F)
 ADESSO=$(date +%s)
 for u in rb-carica rb-plc rb-link; do
-  f=/var/lib/rb-raccolta/$u-$OGGI.csv
-  if [ -s "$f" ]; then
-    ts=$(tail -n 1 "$f" | cut -d, -f1)
-    case $ts in
-      ts) eta="solo intestazione" ;;
-      ''|*[!0-9]*) eta="ultima riga non valida" ;;
-      *) eta="ultima riga $((ADESSO - ts)) s fa" ;;
-    esac
-  else
-    eta="nessun file di oggi"
+  f=$DATI/$u-$OGGI.csv
+  attivo=$(systemctl show "$u" -p ActiveState --value)
+  if [ ! -s "$f" ]; then
+    printf '%-9s: %s, nessun file di oggi\n' "$u" "$attivo"
+    continue
   fi
-  printf '%-9s: %s, %s\n' "$u" "$(systemctl show "$u" -p ActiveState --value)" "$eta"
+  ts=$(tail -n 1 "$f" | cut -d, -f1)
+  case $ts in
+    ts) printf '%-9s: %s, solo intestazione\n' "$u" "$attivo"; continue ;;
+    ''|*[!0-9]*) printf '%-9s: %s, ultima riga non valida\n' "$u" "$attivo"; continue ;;
+  esac
+  case $u in
+    rb-carica) stato=$(tail -n 1 "$f" | cut -d, -f2,3 | tr , " ") ;;
+    rb-plc) stato=$(tail -n 20 "$f" | awk -F, '$1 ~ /^[0-9]+$/ { s[$2] = $3 (($3 == "ok") ? "" : " " $4) }
+                    END { for (a in s) printf "%s%s %s", (n++ ? ", " : ""), a, s[a] }') ;;
+    rb-link) stato=$(tail -n 20 "$f" | awk -F, -v t="$ts" '$1 == t { c[$3]++ }
+                     END { printf "ok %d, KO %d, ERR %d", c["ok"], c["KO"], c["ERR"] }') ;;
+  esac
+  printf '%-9s: %s, ultima riga %d s fa, %s\n' "$u" "$attivo" "$((ADESSO - ts))" "$stato"
+  case $u:$stato in
+    rb-link:*"ERR 0") ;;
+    rb-link:*)
+      echo "!!! rb-link: l'ultimo giro contiene ERR, ping non eseguibile: il logger è CIECO"
+      echo "!!! vedi: journalctl -u rb-link -n 20" ;;
+  esac
 done

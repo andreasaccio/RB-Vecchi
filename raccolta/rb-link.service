@@ -15,6 +15,10 @@ ExecStart=/usr/bin/python3 /opt/rb-raccolta/rb-link.py
 Restart=always
 RestartSec=10
 
+# ping_group_range del sistema non ammette il ping non privilegiato e con
+# NoNewPrivileges la capability di /usr/bin/ping non vale: la dà l'unità.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
