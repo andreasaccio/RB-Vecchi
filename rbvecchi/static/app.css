@@ -276,6 +276,13 @@ a.icon-button { text-decoration: none; }
 .details-list div { display: flex; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
 .details-list dt { color: var(--muted); }
 .details-list dd { margin: 0; text-align: right; font-weight: 700; }
+.details-list dd { overflow-wrap: anywhere; }
+.details-list dd.value-alarm { color: var(--danger); }
+.page-back { color: var(--primary); font-size: 0.85rem; font-weight: 720; text-decoration: none; }
+.section-age { flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; background: #eef2f7; color: var(--muted); font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.section-nd { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-md); background: #f2f4f7; color: var(--muted); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.section-nd-alarm { background: var(--danger-bg); color: var(--danger); }
+.plc-adapter h4 { margin: 18px 0 4px; font-size: 1rem; letter-spacing: -0.02em; }
 .telegram-test-result { margin: 0; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
 .telegram-test-result.success { color: var(--success); font-weight: 700; }
 .telegram-test-result.error { color: var(--danger); font-weight: 700; }

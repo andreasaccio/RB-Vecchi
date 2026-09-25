@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RB-Vecchi">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <title>Dettagli impianto · {{ app_name }}</title>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div>
+        <a class="page-back" href="/">‹ Pagina principale</a>
+        <h1>Dettagli impianto</h1>
+      </div>
+      <div class="top-actions">
+        <button id="refreshButton" class="secondary-button" type="button">Aggiorna</button>
+        <form method="post" action="/logout">
+          <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
+          </button>
+        </form>
+      </div>
+    </header>
+
+    <main>
+      <section id="sezBasculante" class="details-card"
+               data-indirizzo="{{ shelly_address }}" data-avviso="{{ alert_minutes }}">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Garage · Shelly 1 Gen3</p>
+            <h3>Shelly basculante</h3>
+          </div>
+          <span id="etaBasculante" class="section-age">—</span>
+        </div>
+        <p id="ndBasculante" class="section-nd hidden"></p>
+        <dl id="dlBasculante" class="details-list"></dl>
+      </section>
+
+      <section id="sezRicarica" class="details-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Garage · Shelly 1PM Gen3</p>
+            <h3>Shelly ricarica</h3>
+          </div>
+          <span id="etaRicarica" class="section-age">—</span>
+        </div>
+        <p id="ndRicarica" class="section-nd hidden"></p>
+        <dl id="dlRicarica" class="details-list"></dl>
+      </section>
+
+      <section id="sezPowerline" class="details-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Rete · D-Link DHP-W310AV</p>
+            <h3>Powerline</h3>
+          </div>
+          <span id="etaPowerline" class="section-age">—</span>
+        </div>
+        <p id="ndPowerline" class="section-nd hidden"></p>
+        <dl id="dlPowerline" class="details-list"></dl>
+        <div id="plcAdattatori"></div>
+      </section>
+
+      <section id="sezRaspberry" class="details-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Casa · server</p>
+            <h3>Raspberry</h3>
+          </div>
+          <span id="etaRaspberry" class="section-age">—</span>
+        </div>
+        <p id="ndRaspberry" class="section-nd hidden"></p>
+        <dl id="dlRaspberry" class="details-list"></dl>
+      </section>
+    </main>
+
+    <footer>
+      <span>RB-Vecchi</span>
+      <span id="footerClock">—</span>
+    </footer>
+  </div>
+  <script src="{{ url_for('static', filename='dettagli.js') }}" defer></script>
+</body>
+</html>

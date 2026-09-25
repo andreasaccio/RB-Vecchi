@@ -162,6 +162,16 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
             telegram_enabled=settings.telegram_enabled,
         )
 
+    @app.get("/dettagli")
+    @login_required
+    def dettagli():
+        return render_template(
+            "dettagli.html",
+            app_name=settings.app_name,
+            alert_minutes=max(1, settings.open_alert_seconds // 60),
+            shelly_address=settings.shelly_host.replace("http://", "").replace("https://", ""),
+        )
+
     @app.get("/api/dashboard")
     @login_required
     def api_dashboard():
@@ -205,6 +215,11 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
     @login_required
     def api_carica():
         return leggi_raccolta(raccolta.leggi_carica, raccolta.CARICA, "carica")
+
+    @app.get("/api/sistema")
+    @login_required
+    def api_sistema():
+        return leggi_raccolta(raccolta.leggi_sistema, raccolta.SISTEMA, "sistema")
 
     @app.get("/api/events")
     @login_required
