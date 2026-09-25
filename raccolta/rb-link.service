@@ -1,0 +1,26 @@
+[Unit]
+Description=RB-Vecchi raccolta: ping dei nodi di rete
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rbraccolta
+Group=rbraccolta
+Environment=RB_RACCOLTA_DIR=/var/lib/rb-raccolta
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0022
+ExecStart=/usr/bin/python3 /opt/rb-raccolta/rb-link.py
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rb-raccolta
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
