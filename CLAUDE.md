@@ -18,6 +18,11 @@ parte rete descrive l'impianto TP-Link rimosso il 24/09); stato della rete del 2
 - Non toccare mai /etc/rb-vecchi.env nel codice: contiene i segreti di produzione.
 - Non aggiornare il firmware dello Shelly del basculante (192.168.1.100,
   1.7.5 installato, 2.0.0 disponibile).
+- Dal PC nessuna chiamata ai dispositivi reali della LAN (Shelly, adattatori,
+  Raspberry) senza richiesta esplicita: i test girano su dati sintetici.
+- Non simulare un'unità systemd lanciando il comando con systemd-run: se il comando
+  è figlio diretto di systemd i privilegi possono differire da quelli dell'unità
+  vera (caso di ping con NoNewPrivileges, 25/09). Si verifica l'uscita dell'unità vera.
 
 ## Rete
 - Powerline D-Link DHP-W310AV: 192.168.1.66 casa, 192.168.1.67 garage.
