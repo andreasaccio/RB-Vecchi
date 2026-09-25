@@ -11,11 +11,11 @@
 #   altrimenti è un azzeramento di quel solo contatore (si riparte da lì);
 # - simmetria tx/rx fra .66 e .67: solo rapporto informativo.
 # Con --json: riepilogo powerline per la dashboard (regole in classifica()).
-import argparse, csv, json, os, sys, tempfile, time
+import argparse, csv, json, os, sys, time
 from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from giornaliero import directory, percorso
+from giornaliero import directory, percorso, scrivi_json_atomico
 
 PASSO_LINK, BUCO_LINK = 5, 30      # s; oltre BUCO fra due giri = dati mancanti
 PASSO_PLC, BUCO_PLC = 120, 360
@@ -32,6 +32,7 @@ FINESTRE = {"24h": ("Ultime 24 ore", 86400), "7g": ("Ultimi 7 giorni", 7 * 86400
 # Regole del riepilogo powerline (--json), tutte qui. Valori iniziali, da
 # rivedere con i dati.
 CASA, GARAGE = "192.168.1.66", "192.168.1.67"
+ADATTATORI = {"casa": CASA, "garage": GARAGE}
 FINESTRA_RIEPILOGO = 86400        # s, le "24 h"
 DATI_VECCHI = 120                 # s: rb-link più vecchio di così -> non_disponibile
 GIRI_INTERROTTA = 2               # ultimi giri con .67 KO -> interrotta
@@ -136,7 +137,9 @@ def analizza_plc(righe, inizio, fine):
     for adatt, seq in per_adatt.items():
         a = {"ok": 0, "KO": 0, "riavvii": [], "azzeramenti": [],
              "incrementi": dict.fromkeys(CONTATORI, 0),
-             "buchi": buchi([r[0] for r in seq], inizio, fine, BUCO_PLC)}
+             "buchi": buchi([r[0] for r in seq], inizio, fine, BUCO_PLC),
+             "ultimo_campione": None,
+             "ultima_lettura": {"ts": seq[-1][0], "stato": seq[-1][2]}}
         prec = None
         for r in seq:
             if r[2] != "ok":
@@ -151,6 +154,7 @@ def analizza_plc(righe, inizio, fine):
                 a["KO"] += 1
                 continue
             a["ok"] += 1
+            a["ultimo_campione"] = {"ts": r[0], **v}
             if prec is not None:
                 if v["tx_pkt"] < prec["tx_pkt"] or v["rx_pkt"] < prec["rx_pkt"]:
                     a["riavvii"].append(r[0])
@@ -230,6 +234,7 @@ def giri_ko_in_coda(ultimi_giri):
 
 def riepilogo(base, adesso):
     """Riepilogo powerline delle ultime 24 ore per la dashboard."""
+    t0 = time.monotonic()
     inizio = adesso - FINESTRA_RIEPILOGO
     righe, _ = leggi(base, "rb-link", inizio, adesso, 3)
     link = analizza_link(righe, inizio, adesso)
@@ -266,32 +271,22 @@ def riepilogo(base, adesso):
         "ultimo_giro": int(ultimi_giri[-1][0]) if ultimi_giri else None,
         "garage": garage,
         "plc": {
-            adatt: {"scartati_tx_24h": a["incrementi"]["tx_drop"],
+            adatt: {"ip": ADATTATORI.get(adatt),
+                    "scartati_tx_24h": a["incrementi"]["tx_drop"],
                     "scartati_rx_24h": a["incrementi"]["rx_drop"],
-                    "riavvii_24h": len(a["riavvii"])}
+                    "riavvii_24h": len(a["riavvii"]),
+                    "ultimo_riavvio_24h": int(a["riavvii"][-1]) if a["riavvii"] else None,
+                    "ultima_lettura": {"ts": int(a["ultima_lettura"]["ts"]),
+                                       "stato": a["ultima_lettura"]["stato"]},
+                    "ultimo_campione": None if a["ultimo_campione"] is None else
+                    {k: int(v) for k, v in a["ultimo_campione"].items()}}
             for adatt, a in sorted(plc.items())
         },
         "scartati_plc_24h": sum(a["incrementi"]["tx_drop"] + a["incrementi"]["rx_drop"]
                                 for a in plc.values()),
         "riavvii_24h": sum(len(a["riavvii"]) for a in plc.values()),
+        "calcolo_ms": int((time.monotonic() - t0) * 1000),
     }
-
-
-def scrivi_atomico(percorso_file, dati):
-    """File temporaneo nella stessa directory + rename: chi legge vede il
-    file vecchio o quello nuovo, mai uno a metà. Leggibile da tutti (0644)."""
-    d = os.path.dirname(os.path.abspath(percorso_file))
-    fd, tmp = tempfile.mkstemp(prefix=".stato-rete.", suffix=".tmp", dir=d)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(dati, f, ensure_ascii=False, indent=1)
-            f.write("\n")
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, percorso_file)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
 
 
 # ---------------------------------------------------------------- stampa
@@ -405,7 +400,7 @@ def main(argv=None):
     if a.json:
         dati = riepilogo(a.dir, adesso)
         if a.uscita:
-            scrivi_atomico(a.uscita, dati)
+            scrivi_json_atomico(a.uscita, dati)
         else:
             json.dump(dati, sys.stdout, ensure_ascii=False, indent=1)
             print()

@@ -1,7 +1,8 @@
 # Scrittura dei CSV giornalieri comune ai raccoglitori (e a migra-dati.py).
 # Un file per raccoglitore e per giorno, data LOCALE del campione nel nome,
 # intestazione in testa a ogni file. I timestamp nelle righe sono epoch.
-import os, time
+# Più la scrittura atomica dei JSON letti dalla dashboard.
+import json, os, tempfile, time
 
 DIR_PREDEFINITA = "/var/lib/rb-raccolta"
 
@@ -52,3 +53,20 @@ class Giornaliero:
             self._f.close()
         self._f = None
         self._data = None
+
+
+def scrivi_json_atomico(percorso_file, dati):
+    """File temporaneo nella stessa directory + rename: chi legge vede il
+    file vecchio o quello nuovo, mai uno a metà. Leggibile da tutti (0644)."""
+    d = os.path.dirname(os.path.abspath(percorso_file))
+    fd, tmp = tempfile.mkstemp(prefix=".json.", suffix=".tmp", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(dati, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, percorso_file)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise

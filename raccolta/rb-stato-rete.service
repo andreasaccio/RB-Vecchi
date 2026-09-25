@@ -1,5 +1,5 @@
 [Unit]
-Description=RB-Vecchi raccolta: riepilogo powerline per la dashboard
+Description=RB-Vecchi raccolta: riepilogo powerline e stato del Raspberry per la dashboard
 After=rb-link.service rb-plc.service
 
 [Service]
@@ -10,7 +10,10 @@ Environment=RB_RACCOLTA_DIR=/var/lib/rb-raccolta
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0022
-ExecStart=/usr/bin/python3 /opt/rb-raccolta/stato_rete.py --json --uscita /var/lib/rb-raccolta/stato-rete.json
+# Due uscite indipendenti: il "-" fa girare la seconda anche se la prima fallisce;
+# la dashboard riconosce un file non aggiornato dalla sua età.
+ExecStart=-/usr/bin/python3 /opt/rb-raccolta/stato_rete.py --json --uscita /var/lib/rb-raccolta/stato-rete.json
+ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sistema.py --uscita /var/lib/rb-raccolta/sistema.json
 TimeoutStartSec=50
 
 NoNewPrivileges=true

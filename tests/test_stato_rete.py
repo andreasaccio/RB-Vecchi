@@ -193,8 +193,26 @@ def test_riepilogo_instabile_per_scartati_e_riavvio(tmp_path: Path) -> None:
     r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {}, 30, plc_righe))
     assert r["stato"] == "instabile"
     assert "4 pacchetti PLC scartati" in r["motivo"] and "1 riavvio" in r["motivo"]
-    assert r["plc"]["casa"] == {"scartati_tx_24h": 3, "scartati_rx_24h": 1, "riavvii_24h": 0}
-    assert r["plc"]["garage"]["riavvii_24h"] == 1
+    casa, garage = r["plc"]["casa"], r["plc"]["garage"]
+    assert (casa["scartati_tx_24h"], casa["scartati_rx_24h"], casa["riavvii_24h"]) == (3, 1, 0)
+    assert casa["ip"] == "192.168.1.66" and casa["ultimo_riavvio_24h"] is None
+    assert casa["ultimo_campione"] == {"ts": int(T0 + 120), "tx_pkt": 200, "rx_pkt": 200,
+                                       "tx_drop": 3, "rx_drop": 1,
+                                       "tx_byte": 2000, "rx_byte": 2000}
+    assert garage["riavvii_24h"] == 1 and garage["ultimo_riavvio_24h"] == int(T0 + 120)
+    assert garage["ultima_lettura"] == {"ts": int(T0 + 120), "stato": "ok"}
+    assert isinstance(r["calcolo_ms"], int)
+
+
+def test_riepilogo_ultima_lettura_ko_tiene_ultimo_campione_ok(tmp_path: Path) -> None:
+    plc_righe = [
+        f"{T0:.0f},casa,ok,100,100,0,0,1000,1000",
+        f"{T0 + 120:.0f},casa,KO,URLError",
+        f"{T0:.0f},garage,ok,100,100,0,0,1000,1000",
+    ]
+    casa = stato_rete.riepilogo(tmp_path, rete(tmp_path, {}, 30, plc_righe))["plc"]["casa"]
+    assert casa["ultima_lettura"] == {"ts": int(T0 + 120), "stato": "KO"}
+    assert casa["ultimo_campione"]["ts"] == int(T0)
 
 
 def test_riepilogo_soglia_perdite_isolate(tmp_path: Path) -> None:

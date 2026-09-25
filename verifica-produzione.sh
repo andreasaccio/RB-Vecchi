@@ -61,16 +61,19 @@ for u in rb-carica rb-plc rb-link; do
       echo "!!! vedi: journalctl -u rb-link -n 20" ;;
   esac
 done
-# Riepilogo powerline letto dalla dashboard: età e stato del JSON.
-j=$DATI/stato-rete.json
-if [ -r "$j" ]; then
-  g=$(sed -n 's/^ *"generato": \([0-9]*\),$/\1/p' "$j")
-  st=$(sed -n 's/^ *"stato": "\(.*\)",$/\1/p' "$j")
-  printf 'powerline: timer %s, JSON di %s s fa, stato %s\n' \
-    "$(systemctl show rb-stato-rete.timer -p ActiveState --value)" "$((ADESSO - ${g:-0}))" "${st:-?}"
-  if [ "$((ADESSO - ${g:-0}))" -gt 300 ]; then
-    echo "!!! stato-rete.json più vecchio di 5 minuti: la dashboard mostra 'non disponibile'"
+# File letti dalla dashboard: età e stato. Oltre il limite la dashboard mostra
+# "non disponibile" (carica-ultimo.json 60 s, gli altri 5 minuti).
+echo "timer rb-stato-rete: $(systemctl show rb-stato-rete.timer -p ActiveState --value)"
+for voce in stato-rete.json:300 sistema.json:300 carica-ultimo.json:60; do
+  j=$DATI/${voce%:*}; limite=${voce#*:}
+  if [ ! -r "$j" ]; then
+    echo "!!! MANCA $j"; continue
   fi
-else
-  echo "powerline: MANCA $j"
-fi
+  g=$(sed -n 's/^ "generato": \([0-9]*\).*$/\1/p' "$j")
+  st=$(sed -n 's/^ "stato": "\(.*\)",$/\1/p' "$j")
+  eta=$((ADESSO - ${g:-0}))
+  printf '%-18s: di %s s fa%s\n' "${voce%:*}" "$eta" "${st:+, stato $st}"
+  if [ "$eta" -gt "$limite" ]; then
+    echo "!!! ${voce%:*} più vecchio di $limite s: la dashboard mostra 'non disponibile'"
+  fi
+done

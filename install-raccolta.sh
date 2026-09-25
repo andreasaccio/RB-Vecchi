@@ -13,7 +13,7 @@ SRC="$SCRIPT_DIR/raccolta"
 INSTALL_DIR=/opt/rb-raccolta
 DATA_DIR=/var/lib/rb-raccolta
 SERVICE_USER=rbraccolta
-PROGRAMMI="giornaliero.py rb-carica.py rb-plc.py rb-link.py stato_rete.py"
+PROGRAMMI="giornaliero.py rb-carica.py rb-plc.py rb-link.py stato_rete.py sistema.py"
 UNITA="rb-carica.service rb-plc.service rb-link.service"
 # Riepilogo powerline per la dashboard: oneshot lanciato dal timer ogni 60 s.
 RIEPILOGO="rb-stato-rete.service rb-stato-rete.timer"
@@ -40,7 +40,7 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
 for f in $PROGRAMMI; do
   install -m 0644 "$SRC/$f" "$INSTALL_DIR/$f"
 done
-chmod 0755 "$INSTALL_DIR"/rb-*.py "$INSTALL_DIR/stato_rete.py"
+chmod 0755 "$INSTALL_DIR"/rb-*.py "$INSTALL_DIR/stato_rete.py" "$INSTALL_DIR/sistema.py"
 for u in $UNITA $RIEPILOGO; do
   install -m 0644 "$SRC/$u" "/etc/systemd/system/$u"
 done
@@ -88,16 +88,23 @@ else
   fi
 fi
 
-# Riepilogo: un giro dell'unità vera, poi il JSON che ha scritto e il tempo.
-if systemctl start rb-stato-rete.service; then
-  t0=$(systemctl show rb-stato-rete.service -p ExecMainStartTimestampMonotonic --value)
-  t1=$(systemctl show rb-stato-rete.service -p ExecMainExitTimestampMonotonic --value)
-  echo "riepilogo powerline calcolato in $(( (t1 - t0) / 1000 )) ms"
-  sed -n 's/^ *"\(stato\|motivo\)": \(.*\),$/  \1: \2/p' "$JSON"
-else
-  echo "ATTENZIONE: rb-stato-rete.service non ha scritto $JSON" >&2
-  journalctl -u rb-stato-rete.service -n 15 --no-pager >&2 || true
-  ESITO=2
+# Riepilogo: un giro dell'unità vera, poi i JSON che le unità hanno scritto.
+t0=$(date +%s)
+systemctl start rb-stato-rete.service || true
+t1=$(date +%s)
+echo "rb-stato-rete.service: giro completo in $((t1 - t0)) s"
+for j in stato-rete.json sistema.json carica-ultimo.json; do
+  g=$(sed -n 's/^ "generato": \([0-9]*\).*$/\1/p' "$DATA_DIR/$j" 2>/dev/null)
+  if [ -n "$g" ] && [ "$((t1 - g))" -le 60 ]; then
+    echo "$j: scritto $((t1 - g)) s fa"
+  else
+    echo "ATTENZIONE: $j assente o non aggiornato dall'unità" >&2
+    ESITO=2
+  fi
+done
+sed -n 's/^ "\(stato\|motivo\|calcolo_ms\)": \(.*\),$/  stato-rete.json \1: \2/p' "$JSON"
+if [ "$ESITO" -ne 0 ]; then
+  journalctl -u rb-stato-rete.service -u rb-carica.service -n 20 --no-pager >&2 || true
 fi
 systemctl restart rb-stato-rete.timer
 
