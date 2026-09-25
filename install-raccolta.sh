@@ -13,11 +13,14 @@ SRC="$SCRIPT_DIR/raccolta"
 INSTALL_DIR=/opt/rb-raccolta
 DATA_DIR=/var/lib/rb-raccolta
 SERVICE_USER=rbraccolta
-PROGRAMMI="giornaliero.py rb-carica.py rb-plc.py rb-link.py"
+PROGRAMMI="giornaliero.py rb-carica.py rb-plc.py rb-link.py stato_rete.py"
 UNITA="rb-carica.service rb-plc.service rb-link.service"
+# Riepilogo powerline per la dashboard: oneshot lanciato dal timer ogni 60 s.
+RIEPILOGO="rb-stato-rete.service rb-stato-rete.timer"
+JSON="$DATA_DIR/stato-rete.json"
 
 # Un'unità transitoria con lo stesso nome avrebbe la precedenza sul file in /etc.
-for u in $UNITA; do
+for u in $UNITA $RIEPILOGO; do
   if [ "$(systemctl show -p Transient --value "$u" 2>/dev/null)" = yes ]; then
     echo "$u è ancora un'unità transitoria: fermarla prima (systemctl stop $u)." >&2
     exit 1
@@ -37,13 +40,13 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
 for f in $PROGRAMMI; do
   install -m 0644 "$SRC/$f" "$INSTALL_DIR/$f"
 done
-chmod 0755 "$INSTALL_DIR"/rb-*.py
-for u in $UNITA; do
+chmod 0755 "$INSTALL_DIR"/rb-*.py "$INSTALL_DIR/stato_rete.py"
+for u in $UNITA $RIEPILOGO; do
   install -m 0644 "$SRC/$u" "/etc/systemd/system/$u"
 done
 
 systemctl daemon-reload
-systemctl enable $UNITA
+systemctl enable $UNITA rb-stato-rete.timer
 AVVIO=$(date +%s)
 systemctl restart $UNITA
 
@@ -85,7 +88,20 @@ else
   fi
 fi
 
-for u in $UNITA; do
+# Riepilogo: un giro dell'unità vera, poi il JSON che ha scritto e il tempo.
+if systemctl start rb-stato-rete.service; then
+  t0=$(systemctl show rb-stato-rete.service -p ExecMainStartTimestampMonotonic --value)
+  t1=$(systemctl show rb-stato-rete.service -p ExecMainExitTimestampMonotonic --value)
+  echo "riepilogo powerline calcolato in $(( (t1 - t0) / 1000 )) ms"
+  sed -n 's/^ *"\(stato\|motivo\)": \(.*\),$/  \1: \2/p' "$JSON"
+else
+  echo "ATTENZIONE: rb-stato-rete.service non ha scritto $JSON" >&2
+  journalctl -u rb-stato-rete.service -n 15 --no-pager >&2 || true
+  ESITO=2
+fi
+systemctl restart rb-stato-rete.timer
+
+for u in $UNITA rb-stato-rete.timer; do
   echo "$u: $(systemctl is-active "$u" || true)"
 done
 exit $ESITO

@@ -21,11 +21,11 @@ if [ -d /opt/rb-raccolta ]; then
 else
   echo "MANCA /opt/rb-raccolta"; m=$((m+1))
 fi
-for u in rb-carica rb-plc rb-link; do
-  if [ ! -e "/etc/systemd/system/$u.service" ]; then
-    echo "MANCA /etc/systemd/system/$u.service"; m=$((m+1))
-  elif ! cmp -s "/etc/systemd/system/$u.service" "$REPO/raccolta/$u.service"; then
-    echo "DIFF $u.service"; m=$((m+1))
+for u in rb-carica.service rb-plc.service rb-link.service rb-stato-rete.service rb-stato-rete.timer; do
+  if [ ! -e "/etc/systemd/system/$u" ]; then
+    echo "MANCA /etc/systemd/system/$u"; m=$((m+1))
+  elif ! cmp -s "/etc/systemd/system/$u" "$REPO/raccolta/$u"; then
+    echo "DIFF $u"; m=$((m+1))
   fi
 done
 [ "$m" -eq 0 ] && echo "raccolta allineata al repository"
@@ -61,3 +61,16 @@ for u in rb-carica rb-plc rb-link; do
       echo "!!! vedi: journalctl -u rb-link -n 20" ;;
   esac
 done
+# Riepilogo powerline letto dalla dashboard: età e stato del JSON.
+j=$DATI/stato-rete.json
+if [ -r "$j" ]; then
+  g=$(sed -n 's/^ *"generato": \([0-9]*\),$/\1/p' "$j")
+  st=$(sed -n 's/^ *"stato": "\(.*\)",$/\1/p' "$j")
+  printf 'powerline: timer %s, JSON di %s s fa, stato %s\n' \
+    "$(systemctl show rb-stato-rete.timer -p ActiveState --value)" "$((ADESSO - ${g:-0}))" "${st:-?}"
+  if [ "$((ADESSO - ${g:-0}))" -gt 300 ]; then
+    echo "!!! stato-rete.json più vecchio di 5 minuti: la dashboard mostra 'non disponibile'"
+  fi
+else
+  echo "powerline: MANCA $j"
+fi

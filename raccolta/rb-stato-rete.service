@@ -1,0 +1,22 @@
+[Unit]
+Description=RB-Vecchi raccolta: riepilogo powerline per la dashboard
+After=rb-link.service rb-plc.service
+
+[Service]
+Type=oneshot
+User=rbraccolta
+Group=rbraccolta
+Environment=RB_RACCOLTA_DIR=/var/lib/rb-raccolta
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0022
+ExecStart=/usr/bin/python3 /opt/rb-raccolta/stato_rete.py --json --uscita /var/lib/rb-raccolta/stato-rete.json
+TimeoutStartSec=50
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rb-raccolta
+# Legge solo file locali: nessun socket di rete.
+RestrictAddressFamilies=AF_UNIX

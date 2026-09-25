@@ -139,3 +139,114 @@ def test_main_stampa_rapporto(tmp_path: Path, capsys) -> None:
     assert "Ultime 24 ore" in out
     assert "episodi KO" in out
     assert "informativa" in out
+
+
+# ---------------------------------------------------------------- riepilogo --json
+
+import json  # noqa: E402
+import os  # noqa: E402
+
+TUTTI = ["192.168.1.1", "192.168.1.66", "192.168.1.67", "192.168.1.100", "192.168.1.101"]
+SIMBOLI = {".": "ok", "X": "KO", "E": "ERR"}
+
+
+def rete(base: Path, stati: dict[str, str], n: int, plc_righe: list[str] | None = None) -> float:
+    """n giri da T0 per tutti i nodi (ok salvo diversa indicazione); restituisce
+    l'istante 2 s dopo l'ultimo giro."""
+    righe = [f"{T0 + 5 * i:.0f},{h},{SIMBOLI[stati.get(h, '.' * n)[i]]}"
+             for i in range(n) for h in TUTTI]
+    scrivi(base, "rb-link", righe)
+    scrivi(base, "rb-plc", plc_righe if plc_righe is not None else [
+        f"{T0:.0f},casa,ok,100,100,0,0,1000,1000",
+        f"{T0:.0f},garage,ok,100,100,0,0,1000,1000",
+        f"{T0 + 120:.0f},casa,ok,200,200,0,0,2000,2000",
+        f"{T0 + 120:.0f},garage,ok,200,200,0,0,2000,2000",
+    ])
+    return T0 + 5 * (n - 1) + 2
+
+
+def test_riepilogo_stabile(tmp_path: Path) -> None:
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {}, 30))
+    assert r["stato"] == "stabile"
+    assert r["garage"]["disponibilita_24h"] == 100.0
+    assert r["garage"]["episodi_24h"] == 0 and r["garage"]["ultimo_episodio"] is None
+    assert (r["scartati_plc_24h"], r["riavvii_24h"]) == (0, 0)
+    assert r["generato"] == int(T0 + 147) and r["ultimo_giro"] == int(T0 + 145)
+
+
+def test_riepilogo_instabile_per_episodio(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {"192.168.1.67": "....XXX" + "." * 23}, 30)
+    r = stato_rete.riepilogo(tmp_path, adesso)
+    assert r["stato"] == "instabile" and "1 episodio KO sul .67" in r["motivo"]
+    assert r["garage"]["ultimo_episodio"] == {
+        "inizio": int(T0 + 20), "durata_s": 15, "giri": 3, "in_corso": False}
+    assert r["garage"]["disponibilita_24h"] == 90.0
+
+
+def test_riepilogo_instabile_per_scartati_e_riavvio(tmp_path: Path) -> None:
+    plc_righe = [
+        f"{T0:.0f},casa,ok,100,100,0,0,1000,1000",
+        f"{T0 + 120:.0f},casa,ok,200,200,3,1,2000,2000",
+        f"{T0:.0f},garage,ok,100,100,0,0,1000,1000",
+        f"{T0 + 120:.0f},garage,ok,5,5,0,0,50,50",          # riavvio
+    ]
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {}, 30, plc_righe))
+    assert r["stato"] == "instabile"
+    assert "4 pacchetti PLC scartati" in r["motivo"] and "1 riavvio" in r["motivo"]
+    assert r["plc"]["casa"] == {"scartati_tx_24h": 3, "scartati_rx_24h": 1, "riavvii_24h": 0}
+    assert r["plc"]["garage"]["riavvii_24h"] == 1
+
+
+def test_riepilogo_soglia_perdite_isolate(tmp_path: Path) -> None:
+    venti = ".X" * 20 + "...."
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.67": venti}, len(venti)))
+    assert r["garage"]["perdite_isolate_24h"] == 20 and r["stato"] == "stabile"
+
+    ventuno = ".X" * 21 + "...."
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.67": ventuno}, len(ventuno)))
+    assert r["stato"] == "instabile" and "21 perdite isolate" in r["motivo"]
+
+
+def test_riepilogo_interrotta_lato_garage(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {"192.168.1.67": "." * 27 + "XXX"}, 30)
+    r = stato_rete.riepilogo(tmp_path, adesso)
+    assert r["stato"] == "interrotta"
+    assert "non risponde da 3 giri" in r["motivo"] and "(.66) sì" in r["motivo"]
+    assert r["garage"]["ultimo_episodio"]["in_corso"] is True
+
+
+def test_riepilogo_interrotta_lato_casa(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {"192.168.1.66": "." * 28 + "XX",
+                             "192.168.1.67": "." * 28 + "XX"}, 30)
+    r = stato_rete.riepilogo(tmp_path, adesso)
+    assert r["stato"] == "interrotta" and r["motivo"].startswith("lato casa")
+
+
+def test_riepilogo_un_solo_ko_non_basta_per_interrotta(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {"192.168.1.67": "." * 29 + "X"}, 30)
+    assert stato_rete.riepilogo(tmp_path, adesso)["stato"] == "stabile"
+
+
+def test_riepilogo_non_disponibile(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {}, 30)
+    r = stato_rete.riepilogo(tmp_path, adesso + 200)          # dati fermi da > 2 min
+    assert r["stato"] == "non_disponibile" and "fermi da" in r["motivo"]
+
+    rete(tmp_path, {"192.168.1.1": "." * 29 + "E"}, 30)       # ultimo giro con ERR
+    r = stato_rete.riepilogo(tmp_path, adesso)
+    assert r["stato"] == "non_disponibile" and "ERR" in r["motivo"]
+
+    vuota = tmp_path / "vuota"
+    vuota.mkdir()
+    r = stato_rete.riepilogo(vuota, adesso)
+    assert r["stato"] == "non_disponibile" and r["garage"] is None
+
+
+def test_json_scritto_in_modo_atomico(tmp_path: Path) -> None:
+    adesso = rete(tmp_path, {}, 30)
+    uscita = tmp_path / "stato-rete.json"
+    assert stato_rete.main(["--dir", str(tmp_path), "--ora", str(adesso),
+                            "--json", "--uscita", str(uscita)]) == 0
+    assert json.loads(uscita.read_text())["stato"] == "stabile"
+    assert oct(os.stat(uscita).st_mode & 0o777) == "0o644"
+    assert not [p for p in os.listdir(tmp_path) if p.endswith(".tmp")]

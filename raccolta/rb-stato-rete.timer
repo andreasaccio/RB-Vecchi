@@ -1,0 +1,10 @@
+[Unit]
+Description=RB-Vecchi raccolta: riepilogo powerline ogni 60 s
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

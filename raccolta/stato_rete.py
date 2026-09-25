@@ -10,7 +10,8 @@
 #   dell'adattatore (si riparte dal nuovo valore per tutti i contatori),
 #   altrimenti è un azzeramento di quel solo contatore (si riparte da lì);
 # - simmetria tx/rx fra .66 e .67: solo rapporto informativo.
-import argparse, csv, os, sys, time
+# Con --json: riepilogo powerline per la dashboard (regole in classifica()).
+import argparse, csv, json, os, sys, tempfile, time
 from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,14 @@ NODI = {
     "192.168.1.101": "Shelly ricarica",
 }
 FINESTRE = {"24h": ("Ultime 24 ore", 86400), "7g": ("Ultimi 7 giorni", 7 * 86400)}
+
+# Regole del riepilogo powerline (--json), tutte qui. Valori iniziali, da
+# rivedere con i dati.
+CASA, GARAGE = "192.168.1.66", "192.168.1.67"
+FINESTRA_RIEPILOGO = 86400        # s, le "24 h"
+DATI_VECCHI = 120                 # s: rb-link più vecchio di così -> non_disponibile
+GIRI_INTERROTTA = 2               # ultimi giri con .67 KO -> interrotta
+MAX_PERDITE_ISOLATE = 20          # oltre, sul .67 nelle 24 h -> instabile
 
 
 # ---------------------------------------------------------------- lettura
@@ -169,6 +178,122 @@ def simmetria(plc):
     ]
 
 
+# ---------------------------------------------------------------- riepilogo
+
+def classifica(ultimi_giri, adesso, garage, plc):
+    """Stato e motivo del collegamento powerline. Tutte le regole sono qui.
+    ultimi_giri: [(ts, {host: stato})] dal più vecchio al più recente."""
+    if not ultimi_giri:
+        return "non_disponibile", "nessun dato di rb-link nelle 24 ore"
+    ts_ultimo, ultimo = ultimi_giri[-1]
+    if adesso - ts_ultimo > DATI_VECCHI:
+        return ("non_disponibile", "dati di rb-link fermi da %s" % durata(adesso - ts_ultimo))
+    if "ERR" in ultimo.values():
+        return "non_disponibile", "ultimo giro di rb-link con ERR: ping non eseguibile"
+
+    coda = ultimi_giri[-GIRI_INTERROTTA:]
+    consecutivi = len(coda) == GIRI_INTERROTTA and all(
+        b[0] - a[0] <= BUCO_LINK for a, b in zip(coda, coda[1:]))
+    if consecutivi and all(g.get(GARAGE) == "KO" for _, g in coda):
+        if all(g.get(CASA) == "KO" for _, g in coda):
+            return "interrotta", "lato casa: non rispondono né il PLC casa (.66) né il PLC garage (.67)"
+        if all(g.get(CASA) == "ok" for _, g in coda):
+            return ("interrotta", "il PLC garage (.67) non risponde da %d giri, il PLC casa (.66) sì"
+                    % giri_ko_in_coda(ultimi_giri))
+
+    motivi = []
+    if garage and garage["episodi"]:
+        motivi.append("%d episodi KO sul .67" % len(garage["episodi"])
+                      if len(garage["episodi"]) > 1 else "1 episodio KO sul .67")
+    scartati = sum(a["incrementi"]["tx_drop"] + a["incrementi"]["rx_drop"] for a in plc.values())
+    if scartati:
+        motivi.append("%d pacchetti PLC scartati" % scartati)
+    riavvii = sum(len(a["riavvii"]) for a in plc.values())
+    if riavvii:
+        motivi.append("%d riavvii di adattatore" % riavvii if riavvii > 1
+                      else "1 riavvio di adattatore")
+    if garage and garage["isolate"] > MAX_PERDITE_ISOLATE:
+        motivi.append("%d perdite isolate sul .67" % garage["isolate"])
+    if motivi:
+        return "instabile", "nelle 24 ore: " + ", ".join(motivi)
+    return "stabile", "nelle 24 ore nessun episodio, scarto o riavvio"
+
+
+def giri_ko_in_coda(ultimi_giri):
+    n = 0
+    for _, g in reversed(ultimi_giri):
+        if g.get(GARAGE) != "KO":
+            break
+        n += 1
+    return n
+
+
+def riepilogo(base, adesso):
+    """Riepilogo powerline delle ultime 24 ore per la dashboard."""
+    inizio = adesso - FINESTRA_RIEPILOGO
+    righe, _ = leggi(base, "rb-link", inizio, adesso, 3)
+    link = analizza_link(righe, inizio, adesso)
+    giri = {}
+    for ts, host, stato in (r[:3] for r in righe):
+        giri.setdefault(ts, {})[host] = stato
+    ultimi_giri = [(ts, giri[ts]) for ts in sorted(giri)[-(GIRI_INTERROTTA + 50):]]
+
+    righe_plc, _ = leggi(base, "rb-plc", inizio, adesso, 3)
+    plc = analizza_plc(righe_plc, inizio, adesso)
+    g = link["nodi"].get(GARAGE)
+    stato, motivo = classifica(ultimi_giri, adesso, g, plc)
+
+    garage = None
+    if g:
+        ultimo = max(g["episodi"], key=lambda e: e["da"]) if g["episodi"] else None
+        garage = {
+            "disponibilita_24h": round(100.0 * g["ok"] / (g["ok"] + g["KO"]), 3),
+            "ok_24h": g["ok"], "ko_24h": g["KO"],
+            "episodi_24h": len(g["episodi"]),
+            "perdite_isolate_24h": g["isolate"],
+            "ultimo_episodio": None if ultimo is None else {
+                "inizio": int(ultimo["da"]),
+                "durata_s": int(ultimo["a"] - ultimo["da"] + PASSO_LINK),
+                "giri": ultimo["giri"],
+                "in_corso": ultimo["bordo"] == "in corso",
+            },
+        }
+    return {
+        "versione": 1,
+        "generato": int(adesso),
+        "stato": stato,
+        "motivo": motivo,
+        "ultimo_giro": int(ultimi_giri[-1][0]) if ultimi_giri else None,
+        "garage": garage,
+        "plc": {
+            adatt: {"scartati_tx_24h": a["incrementi"]["tx_drop"],
+                    "scartati_rx_24h": a["incrementi"]["rx_drop"],
+                    "riavvii_24h": len(a["riavvii"])}
+            for adatt, a in sorted(plc.items())
+        },
+        "scartati_plc_24h": sum(a["incrementi"]["tx_drop"] + a["incrementi"]["rx_drop"]
+                                for a in plc.values()),
+        "riavvii_24h": sum(len(a["riavvii"]) for a in plc.values()),
+    }
+
+
+def scrivi_atomico(percorso_file, dati):
+    """File temporaneo nella stessa directory + rename: chi legge vede il
+    file vecchio o quello nuovo, mai uno a metà. Leggibile da tutti (0644)."""
+    d = os.path.dirname(os.path.abspath(percorso_file))
+    fd, tmp = tempfile.mkstemp(prefix=".stato-rete.", suffix=".tmp", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(dati, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, percorso_file)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
 # ---------------------------------------------------------------- stampa
 
 def ora(ts):
@@ -269,11 +394,22 @@ def main(argv=None):
                     help="24h o 7g (ripetibile; predefinite entrambe)")
     ap.add_argument("--ora", type=float, default=None,
                     help="fine della finestra, epoch (predefinita: adesso)")
+    ap.add_argument("--json", action="store_true",
+                    help="riepilogo powerline delle 24 ore in JSON, per la dashboard")
+    ap.add_argument("--uscita", help="con --json: file da scrivere in modo atomico")
     a = ap.parse_args(argv)
     if not os.path.isdir(a.dir):
         print("Directory dei dati inesistente: %s" % a.dir, file=sys.stderr)
         return 1
     adesso = a.ora if a.ora is not None else time.time()
+    if a.json:
+        dati = riepilogo(a.dir, adesso)
+        if a.uscita:
+            scrivi_atomico(a.uscita, dati)
+        else:
+            json.dump(dati, sys.stdout, ensure_ascii=False, indent=1)
+            print()
+        return 0
     for chiave in a.finestra or ["24h", "7g"]:
         rapporto(a.dir, chiave, adesso)
     return 0
