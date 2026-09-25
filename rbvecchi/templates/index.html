@@ -53,6 +53,22 @@
         </div>
       </section>
 
+      <section id="powerlineCard" class="powerline-card pl-non_disponibile" aria-live="polite">
+        <div class="powerline-head">
+          <p class="section-label">Powerline casa – garage</p>
+          <span id="powerlineAge" class="powerline-age"></span>
+        </div>
+        <div class="status-row">
+          <span class="status-dot"></span>
+          <h2 id="powerlineState">Non disponibile</h2>
+        </div>
+        <p id="powerlineReason" class="powerline-reason">In attesa del riepilogo della raccolta dati…</p>
+        <dl class="powerline-facts">
+          <div><dt>Disponibilità 24 h</dt><dd id="powerlineAvailability">—</dd></div>
+          <div><dt>Ultimo episodio</dt><dd id="powerlineLastEpisode">—</dd></div>
+        </dl>
+      </section>
+
       <section class="command-card">
         <button id="pulseButton" class="primary-button" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v2h10V4h2v16h-2v-2H7v2H5V4h2zm0 4v8h10V8H7zm2 2h6v2H9v-2z"/></svg>
@@ -70,15 +86,13 @@
           <span class="metric-label">Aperto oggi</span>
           <strong id="openTimeToday">—</strong>
         </article>
-        <article class="metric-card">
-          <span class="metric-label">Wi-Fi Shelly</span>
-          <strong id="wifiSignal">—</strong>
-        </article>
-        <article class="metric-card">
-          <span class="metric-label">Temperatura</span>
-          <strong id="temperature">—</strong>
-        </article>
       </section>
+
+      <p class="secondary-metrics" aria-label="Dettagli Shelly basculante">
+        <span>Temperatura <strong id="temperature">—</strong></span>
+        <span>Wi-Fi Shelly <strong id="wifiSignal">—</strong></span>
+        <span>Ingresso <strong id="inputState">—</strong></span>
+      </p>
 
       <section class="details-card">
         <div class="section-heading">

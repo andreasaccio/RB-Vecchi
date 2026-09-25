@@ -15,6 +15,13 @@ const elements = {
   openTimeToday: document.getElementById("openTimeToday"),
   wifiSignal: document.getElementById("wifiSignal"),
   temperature: document.getElementById("temperature"),
+  inputState: document.getElementById("inputState"),
+  powerlineCard: document.getElementById("powerlineCard"),
+  powerlineState: document.getElementById("powerlineState"),
+  powerlineReason: document.getElementById("powerlineReason"),
+  powerlineAge: document.getElementById("powerlineAge"),
+  powerlineAvailability: document.getElementById("powerlineAvailability"),
+  powerlineLastEpisode: document.getElementById("powerlineLastEpisode"),
   relayOutput: document.getElementById("relayOutput"),
   inputMode: document.getElementById("inputMode"),
   shellyUptime: document.getElementById("shellyUptime"),
@@ -127,6 +134,9 @@ function updateStatus(status) {
   elements.temperature.textContent = status.temperature_c === null || status.temperature_c === undefined
     ? "n/d"
     : `${Number(status.temperature_c).toFixed(1)} °C`;
+  elements.inputState.textContent = status.raw_input_state === null || status.raw_input_state === undefined
+    ? "n/d"
+    : (status.raw_input_state ? "attivo" : "a riposo");
   elements.relayOutput.textContent = status.relay_output === null || status.relay_output === undefined
     ? "n/d"
     : (status.relay_output ? "Attivo" : "A riposo");
@@ -134,6 +144,64 @@ function updateStatus(status) {
   elements.shellyUptime.textContent = formatDuration(status.uptime_seconds, true);
   elements.lastUpdate.textContent = formatDateTime(status.last_success);
   elements.telegramState.textContent = status.telegram_enabled ? "Attivo" : "Non configurato";
+}
+
+const POWERLINE_LABELS = {
+  stabile: "Stabile",
+  instabile: "Instabile",
+  interrotta: "Interrotta",
+  non_disponibile: "Non disponibile",
+};
+
+function formatPercent(value) {
+  if (value === null || value === undefined) return "—";
+  return `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 2 }).format(value)} %`;
+}
+
+function updatePowerline(powerline) {
+  const state = POWERLINE_LABELS[powerline?.stato] ? powerline.stato : "non_disponibile";
+  const card = elements.powerlineCard;
+  card.classList.remove(...Object.keys(POWERLINE_LABELS).map((key) => `pl-${key}`));
+  card.classList.add(`pl-${state}`);
+  elements.powerlineState.textContent = POWERLINE_LABELS[state];
+  elements.powerlineReason.textContent = powerline?.motivo || "Riepilogo non disponibile.";
+  elements.powerlineAge.textContent = powerline?.eta_s === null || powerline?.eta_s === undefined
+    ? ""
+    : `agg. ${formatDuration(powerline.eta_s, true)} fa`;
+
+  const garage = powerline?.garage;
+  if (!garage) {
+    elements.powerlineAvailability.textContent = "—";
+    elements.powerlineLastEpisode.textContent = "—";
+    return;
+  }
+  const extra = [];
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  if (garage.episodi_24h) extra.push(plural(garage.episodi_24h, "episodio", "episodi"));
+  if (garage.perdite_isolate_24h) {
+    extra.push(plural(garage.perdite_isolate_24h, "perdita isolata", "perdite isolate"));
+  }
+  elements.powerlineAvailability.textContent = formatPercent(garage.disponibilita_24h)
+    + (extra.length ? ` · ${extra.join(", ")}` : "");
+
+  const last = garage.ultimo_episodio;
+  if (!last) {
+    elements.powerlineLastEpisode.textContent = "nessuno nelle 24 h";
+  } else if (last.in_corso) {
+    elements.powerlineLastEpisode.textContent = `in corso dalle ${formatEventDate(last.inizio)}`;
+  } else {
+    elements.powerlineLastEpisode.textContent =
+      `${formatEventDate(last.inizio)}, durata ${formatDuration(last.durata_s, true)}`;
+  }
+}
+
+async function loadPowerline() {
+  try {
+    const payload = await apiFetch("/api/powerline");
+    updatePowerline(payload.powerline);
+  } catch (error) {
+    updatePowerline({ stato: "non_disponibile", motivo: "Riepilogo non raggiungibile dalla dashboard." });
+  }
 }
 
 function renderEvents(events) {
@@ -313,8 +381,10 @@ function updateClock() {
 }
 
 loadDashboard(true);
+loadPowerline();
 updateClock();
 setInterval(loadStatus, 2500);
+setInterval(loadPowerline, 30000);
 setInterval(() => loadDashboard(false), 15000);
 setInterval(updateClock, 1000);
 
