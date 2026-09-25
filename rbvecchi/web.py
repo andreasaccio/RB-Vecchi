@@ -25,7 +25,7 @@ from .config import Settings, load_settings
 from .db import Database
 from .monitor import GarageMonitor
 from .notifier import TelegramError, TelegramNotifier
-from .powerline import leggi_riepilogo
+from . import raccolta
 from .shelly import ShellyClient
 
 LOGGER = logging.getLogger(__name__)
@@ -186,18 +186,25 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
     def api_status():
         return jsonify({"ok": True, "status": monitor.snapshot()})
 
+    def leggi_raccolta(lettore, nome_file: str, chiave: str):
+        # Endpoint separati da /api/status: leggono solo i file della raccolta dati.
+        try:
+            dati = lettore(settings.raccolta_dir / nome_file)
+        except Exception:
+            LOGGER.exception("Lettura di %s fallita", nome_file)
+            dati = {"stato": "non_disponibile", "motivo": "errore interno di lettura",
+                    "eta_s": None}
+        return jsonify({"ok": True, chiave: dati})
+
     @app.get("/api/powerline")
     @login_required
     def api_powerline():
-        # Endpoint separato da /api/status: legge solo il JSON della raccolta dati.
-        try:
-            riepilogo = leggi_riepilogo(settings.powerline_json_path)
-        except Exception:
-            LOGGER.exception("Lettura del riepilogo powerline fallita")
-            riepilogo = {"stato": "non_disponibile", "motivo": "errore interno di lettura",
-                         "generato": None, "eta_s": None, "garage": None,
-                         "scartati_plc_24h": None, "riavvii_24h": None}
-        return jsonify({"ok": True, "powerline": riepilogo})
+        return leggi_raccolta(raccolta.leggi_riepilogo, raccolta.STATO_RETE, "powerline")
+
+    @app.get("/api/carica")
+    @login_required
+    def api_carica():
+        return leggi_raccolta(raccolta.leggi_carica, raccolta.CARICA, "carica")
 
     @app.get("/api/events")
     @login_required

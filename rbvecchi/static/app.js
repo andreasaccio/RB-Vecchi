@@ -13,22 +13,18 @@ const elements = {
   dialogText: document.getElementById("dialogText"),
   openingsToday: document.getElementById("openingsToday"),
   openTimeToday: document.getElementById("openTimeToday"),
-  wifiSignal: document.getElementById("wifiSignal"),
-  temperature: document.getElementById("temperature"),
-  inputState: document.getElementById("inputState"),
   powerlineCard: document.getElementById("powerlineCard"),
   powerlineState: document.getElementById("powerlineState"),
   powerlineReason: document.getElementById("powerlineReason"),
   powerlineAge: document.getElementById("powerlineAge"),
   powerlineAvailability: document.getElementById("powerlineAvailability"),
   powerlineLastEpisode: document.getElementById("powerlineLastEpisode"),
-  relayOutput: document.getElementById("relayOutput"),
-  inputMode: document.getElementById("inputMode"),
-  shellyUptime: document.getElementById("shellyUptime"),
-  lastUpdate: document.getElementById("lastUpdate"),
-  telegramState: document.getElementById("telegramState"),
+  caricaCard: document.getElementById("caricaCard"),
+  caricaAge: document.getElementById("caricaAge"),
+  caricaPower: document.getElementById("caricaPower"),
+  caricaNote: document.getElementById("caricaNote"),
+  caricaWarning: document.getElementById("caricaWarning"),
   eventList: document.getElementById("eventList"),
-  refreshButton: document.getElementById("refreshButton"),
   telegramTestButton: document.getElementById("telegramTestButton"),
   telegramTestResult: document.getElementById("telegramTestResult"),
   footerClock: document.getElementById("footerClock"),
@@ -73,15 +69,6 @@ function formatEventDate(epochSeconds) {
   } : {
     day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
   }).format(date);
-}
-
-function wifiLabel(rssi) {
-  if (rssi === null || rssi === undefined) return "—";
-  let quality = "Debole";
-  if (rssi >= -55) quality = "Ottimo";
-  else if (rssi >= -67) quality = "Buono";
-  else if (rssi >= -75) quality = "Discreto";
-  return `${quality} (${rssi} dBm)`;
 }
 
 function updateStatus(status) {
@@ -129,21 +116,6 @@ function updateStatus(status) {
     elements.staleWarning.classList.remove("hidden");
     elements.staleWarning.textContent = status.safety_warning;
   }
-
-  elements.wifiSignal.textContent = wifiLabel(status.wifi_rssi);
-  elements.temperature.textContent = status.temperature_c === null || status.temperature_c === undefined
-    ? "n/d"
-    : `${Number(status.temperature_c).toFixed(1)} °C`;
-  elements.inputState.textContent = status.raw_input_state === null || status.raw_input_state === undefined
-    ? "n/d"
-    : (status.raw_input_state ? "attivo" : "a riposo");
-  elements.relayOutput.textContent = status.relay_output === null || status.relay_output === undefined
-    ? "n/d"
-    : (status.relay_output ? "Attivo" : "A riposo");
-  elements.inputMode.textContent = status.switch_in_mode || "non verificato";
-  elements.shellyUptime.textContent = formatDuration(status.uptime_seconds, true);
-  elements.lastUpdate.textContent = formatDateTime(status.last_success);
-  elements.telegramState.textContent = status.telegram_enabled ? "Attivo" : "Non configurato";
 }
 
 const POWERLINE_LABELS = {
@@ -201,6 +173,34 @@ async function loadPowerline() {
     updatePowerline(payload.powerline);
   } catch (error) {
     updatePowerline({ stato: "non_disponibile", motivo: "Riepilogo non raggiungibile dalla dashboard." });
+  }
+}
+
+function updateCarica(carica) {
+  const available = carica?.stato === "ok";
+  elements.caricaCard.classList.toggle("carica-non_disponibile", !available);
+  elements.caricaAge.textContent = carica?.eta_s === null || carica?.eta_s === undefined
+    ? ""
+    : `agg. ${formatDuration(carica.eta_s, true)} fa`;
+  if (!available) {
+    elements.caricaPower.textContent = "—";
+    elements.caricaNote.textContent = `Non disponibile: ${carica?.motivo || "dati della ricarica assenti"}.`;
+    elements.caricaWarning.classList.add("hidden");
+    return;
+  }
+  const watts = Math.round(carica.potenza_W);
+  elements.caricaPower.textContent = new Intl.NumberFormat("it-IT").format(watts);
+  elements.caricaNote.textContent = watts === 0 ? "Nessun assorbimento" : "Potenza assorbita dal caricabatterie";
+  elements.caricaWarning.textContent = carica.avviso || "";
+  elements.caricaWarning.classList.toggle("hidden", !carica.avviso);
+}
+
+async function loadCarica() {
+  try {
+    const payload = await apiFetch("/api/carica");
+    updateCarica(payload.carica);
+  } catch (error) {
+    updateCarica({ stato: "non_disponibile", motivo: "dati non raggiungibili dalla dashboard" });
   }
 }
 
@@ -367,7 +367,6 @@ elements.commandDialog?.addEventListener("close", () => {
   if (elements.commandDialog.returnValue === "default") sendPulse();
 });
 
-elements.refreshButton?.addEventListener("click", () => loadDashboard(true));
 elements.telegramTestButton?.addEventListener("click", sendTelegramTest);
 
 function updateClock() {
@@ -382,9 +381,11 @@ function updateClock() {
 
 loadDashboard(true);
 loadPowerline();
+loadCarica();
 updateClock();
 setInterval(loadStatus, 2500);
 setInterval(loadPowerline, 30000);
+setInterval(loadCarica, 10000);
 setInterval(() => loadDashboard(false), 15000);
 setInterval(updateClock, 1000);
 

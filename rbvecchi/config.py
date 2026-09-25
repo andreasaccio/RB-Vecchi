@@ -55,8 +55,8 @@ class Settings:
     listen_host: str
     listen_port: int
     log_level: str
-    # Riepilogo scritto da rb-stato-rete.service (raccolta dati), sola lettura.
-    powerline_json_path: Path = Path("/var/lib/rb-raccolta/stato-rete.json")
+    # File JSON scritti dalla raccolta dati (rb-raccolta): sola lettura.
+    raccolta_dir: Path = Path("/var/lib/rb-raccolta")
 
     @property
     def telegram_enabled(self) -> bool:
@@ -107,7 +107,5 @@ def load_settings(env_file: str | None = None) -> Settings:
         listen_host=os.getenv("LISTEN_HOST", "0.0.0.0").strip(),
         listen_port=_as_int("LISTEN_PORT", 8080, 1),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper().strip(),
-        powerline_json_path=Path(
-            os.getenv("POWERLINE_JSON", "/var/lib/rb-raccolta/stato-rete.json")
-        ).expanduser(),
+        raccolta_dir=Path(os.getenv("RACCOLTA_DIR", "/var/lib/rb-raccolta")).expanduser(),
     )

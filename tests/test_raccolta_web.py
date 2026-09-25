@@ -3,7 +3,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from rbvecchi.powerline import leggi_riepilogo
+from rbvecchi.raccolta import leggi_riepilogo
 from rbvecchi.web import create_app
 from test_monitor import settings
 
@@ -31,7 +31,7 @@ def scrivi(path: Path, generato: float, **cambi) -> None:
 
 
 def client(tmp_path: Path):
-    cfg = replace(settings(tmp_path), powerline_json_path=tmp_path / "stato-rete.json")
+    cfg = replace(settings(tmp_path), raccolta_dir=tmp_path)
     app = create_app(cfg, start_monitor=False)
     c = app.test_client()
     c.post("/login", data={"username": "admin", "password": "password"})
@@ -53,7 +53,7 @@ def test_riepilogo_vecchio_mancante_corrotto(tmp_path: Path) -> None:
 
     scrivi(p, 1000)
     vecchio = leggi_riepilogo(p, adesso=1000 + 301)
-    assert vecchio["stato"] == "non_disponibile" and "fermo da 5 min" in vecchio["motivo"]
+    assert vecchio["stato"] == "non_disponibile" and "fermi da 5 min" in vecchio["motivo"]
     assert leggi_riepilogo(p, adesso=1000 + 300)["stato"] == "instabile"
 
     for contenuto in ['{"stato": "stab', "[]", '{"stato": "boh", "generato": 1000}',
@@ -100,6 +100,6 @@ def test_status_non_dipende_dal_riepilogo(tmp_path: Path) -> None:
 
 
 def test_powerline_richiede_login(tmp_path: Path) -> None:
-    cfg = replace(settings(tmp_path), powerline_json_path=tmp_path / "x.json")
+    cfg = replace(settings(tmp_path), raccolta_dir=tmp_path)
     r = create_app(cfg, start_monitor=False).test_client().get("/api/powerline")
     assert r.status_code == 401

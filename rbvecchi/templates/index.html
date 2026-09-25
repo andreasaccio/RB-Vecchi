@@ -23,6 +23,9 @@
       </div>
       <div class="top-actions">
         <span id="connectionPill" class="pill pill-muted">Connessione…</span>
+        <a class="icon-button" href="/dettagli" aria-label="Dettagli impianto" title="Dettagli impianto">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
+        </a>
         <form method="post" action="/logout">
           <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
@@ -77,6 +80,16 @@
         <p>Invia un impulso passo-passo di sicurezza al relè Shelly.</p>
       </section>
 
+      <section id="caricaCard" class="carica-card carica-non_disponibile" aria-live="polite">
+        <div class="powerline-head">
+          <p class="section-label">Ricarica quadriciclo</p>
+          <span id="caricaAge" class="powerline-age"></span>
+        </div>
+        <p class="carica-power"><strong id="caricaPower">—</strong> <span>W</span></p>
+        <p id="caricaNote" class="powerline-reason">In attesa dei dati della ricarica…</p>
+        <p id="caricaWarning" class="carica-warning hidden"></p>
+      </section>
+
       <section class="metrics-grid" aria-label="Metriche garage">
         <article class="metric-card">
           <span class="metric-label">Aperture oggi</span>
@@ -88,30 +101,13 @@
         </article>
       </section>
 
-      <p class="secondary-metrics" aria-label="Dettagli Shelly basculante">
-        <span>Temperatura <strong id="temperature">—</strong></span>
-        <span>Wi-Fi Shelly <strong id="wifiSignal">—</strong></span>
-        <span>Ingresso <strong id="inputState">—</strong></span>
-      </p>
-
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Dispositivo</p>
-            <h3>Shelly 1 Gen3</h3>
-          </div>
-          <button id="refreshButton" class="secondary-button" type="button">Aggiorna</button>
-        </div>
-        <dl class="details-list">
-          <div><dt>Indirizzo</dt><dd>{{ shelly_address }}</dd></div>
-          <div><dt>Relè</dt><dd id="relayOutput">—</dd></div>
-          <div><dt>Input mode</dt><dd id="inputMode">—</dd></div>
-          <div><dt>Uptime</dt><dd id="shellyUptime">—</dd></div>
-          <div><dt>Ultimo aggiornamento</dt><dd id="lastUpdate">—</dd></div>
-          <div><dt>Avviso apertura</dt><dd>dopo {{ alert_minutes }} minuti</dd></div>
-          <div><dt>Telegram</dt><dd id="telegramState">—</dd></div>
-        </dl>
-      </section>
+      <a class="details-link" href="/dettagli">
+        <span>
+          <strong>Dettagli impianto</strong>
+          <small>Shelly basculante e ricarica, powerline, Raspberry</small>
+        </span>
+        <span class="details-link-arrow" aria-hidden="true">›</span>
+      </a>
 
       <section class="details-card">
         <div class="section-heading">
