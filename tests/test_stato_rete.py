@@ -67,8 +67,8 @@ def test_err_e_bordo_finestra_sono_dati_mancanti(tmp_path: Path) -> None:
 
 
 def test_episodio_chiuso_da_dati_mancanti(tmp_path: Path) -> None:
-    scrivi(tmp_path, "rb-link", giri("192.168.1.67", "..XXX", T0))
-    e = link(tmp_path, T0 + 3600)["nodi"]["192.168.1.67"]["episodi"]
+    scrivi(tmp_path, "rb-link", giri("192.168.1.52", "..XXX", T0))
+    e = link(tmp_path, T0 + 3600)["nodi"]["192.168.1.52"]["episodi"]
     assert len(e) == 1 and e[0]["bordo"] == "dati mancanti"
 
 
@@ -146,7 +146,7 @@ def test_main_stampa_rapporto(tmp_path: Path, capsys) -> None:
 import json  # noqa: E402
 import os  # noqa: E402
 
-TUTTI = ["192.168.1.1", "192.168.1.66", "192.168.1.67", "192.168.1.100", "192.168.1.101"]
+TUTTI = ["192.168.1.1", "192.168.1.52", "192.168.1.100", "192.168.1.101"]
 SIMBOLI = {".": "ok", "X": "KO", "E": "ERR"}
 
 
@@ -175,9 +175,9 @@ def test_riepilogo_stabile(tmp_path: Path) -> None:
 
 
 def test_riepilogo_instabile_per_episodio(tmp_path: Path) -> None:
-    adesso = rete(tmp_path, {"192.168.1.67": "....XXX" + "." * 23}, 30)
+    adesso = rete(tmp_path, {"192.168.1.52": "....XXX" + "." * 23}, 30)
     r = stato_rete.riepilogo(tmp_path, adesso)
-    assert r["stato"] == "instabile" and "1 episodio KO sul .67" in r["motivo"]
+    assert r["stato"] == "instabile" and "1 episodio KO sul .52" in r["motivo"]
     assert r["garage"]["ultimo_episodio"] == {
         "inizio": int(T0 + 20), "durata_s": 15, "giri": 3, "in_corso": False}
     assert r["garage"]["disponibilita_24h"] == 90.0
@@ -217,31 +217,53 @@ def test_riepilogo_ultima_lettura_ko_tiene_ultimo_campione_ok(tmp_path: Path) ->
 
 def test_riepilogo_soglia_perdite_isolate(tmp_path: Path) -> None:
     venti = ".X" * 20 + "...."
-    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.67": venti}, len(venti)))
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.52": venti}, len(venti)))
     assert r["garage"]["perdite_isolate_24h"] == 20 and r["stato"] == "stabile"
 
     ventuno = ".X" * 21 + "...."
-    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.67": ventuno}, len(ventuno)))
-    assert r["stato"] == "instabile" and "21 perdite isolate" in r["motivo"]
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {"192.168.1.52": ventuno}, len(ventuno)))
+    assert r["stato"] == "instabile" and "21 perdite isolate sul .52" in r["motivo"]
 
 
 def test_riepilogo_interrotta_lato_garage(tmp_path: Path) -> None:
-    adesso = rete(tmp_path, {"192.168.1.67": "." * 27 + "XXX"}, 30)
+    adesso = rete(tmp_path, {"192.168.1.52": "." * 27 + "XXX"}, 30)
     r = stato_rete.riepilogo(tmp_path, adesso)
     assert r["stato"] == "interrotta"
-    assert "non risponde da 3 giri" in r["motivo"] and "(.66) sì" in r["motivo"]
+    assert "PLC garage (.52) non risponde da 3 giri" in r["motivo"]
+    assert "router (.1) sì" in r["motivo"]
     assert r["garage"]["ultimo_episodio"]["in_corso"] is True
 
 
 def test_riepilogo_interrotta_lato_casa(tmp_path: Path) -> None:
-    adesso = rete(tmp_path, {"192.168.1.66": "." * 28 + "XX",
-                             "192.168.1.67": "." * 28 + "XX"}, 30)
+    # Il PLC casa TP-Link non ha IP: il riferimento lato casa è il router.
+    adesso = rete(tmp_path, {"192.168.1.1": "." * 28 + "XX",
+                             "192.168.1.52": "." * 28 + "XX"}, 30)
     r = stato_rete.riepilogo(tmp_path, adesso)
     assert r["stato"] == "interrotta" and r["motivo"].startswith("lato casa")
+    assert "router (.1)" in r["motivo"]
+
+
+def test_riepilogo_senza_rb_plc(tmp_path: Path) -> None:
+    # rb-plc dismesso: nessun CSV dei contatori, il riepilogo resta valido.
+    r = stato_rete.riepilogo(tmp_path, rete(tmp_path, {}, 30, plc_righe=[]))
+    assert r["stato"] == "stabile" and r["plc"] == {}
+    assert (r["scartati_plc_24h"], r["riavvii_24h"]) == (0, 0)
+
+
+def test_riepilogo_passaggio_dai_d_link_ai_tp_link(tmp_path: Path) -> None:
+    # Nelle 24 h ci sono ancora i giri vecchi con .66/.67 KO (D-Link staccati):
+    # non contano, il garage è solo il .52 dei giri nuovi.
+    vecchi = [f"{T0 - 600 + 5 * i:.0f},{h},{'ok' if h == '192.168.1.1' else 'KO'}"
+              for i in range(10) for h in ("192.168.1.1", "192.168.1.66", "192.168.1.67")]
+    nuovi = [f"{T0 + 5 * i:.0f},{h},ok" for i in range(30) for h in TUTTI]
+    scrivi(tmp_path, "rb-link", vecchi + nuovi)
+    r = stato_rete.riepilogo(tmp_path, T0 + 5 * 29 + 2)
+    assert r["stato"] == "stabile"
+    assert (r["garage"]["ok_24h"], r["garage"]["ko_24h"]) == (30, 0)
 
 
 def test_riepilogo_un_solo_ko_non_basta_per_interrotta(tmp_path: Path) -> None:
-    adesso = rete(tmp_path, {"192.168.1.67": "." * 29 + "X"}, 30)
+    adesso = rete(tmp_path, {"192.168.1.52": "." * 29 + "X"}, 30)
     assert stato_rete.riepilogo(tmp_path, adesso)["stato"] == "stabile"
 
 

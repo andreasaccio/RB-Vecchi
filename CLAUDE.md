@@ -2,14 +2,15 @@
 
 Monitor del basculante del garage. Raspberry (Ubuntu 24.04, aarch64) + Shelly 1 Gen3
 (basculante). In garage c'è anche uno Shelly 1PM Gen3 per la ricarica del quadriciclo.
-Documentazione in docs/: handoff tecnico e stato accertato del 22/09/2026 (storici: la
-parte rete descrive l'impianto TP-Link rimosso il 24/09); stato della rete del 25/09/2026.
+Documentazione in docs/: handoff tecnico e stato accertato del 22/09/2026 (la parte
+rete descrive l'impianto TP-Link, rimosso il 24/09 e rimesso l'11/10); stato della rete
+del 25/09/2026 (periodo D-Link, storico).
 
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 61 file; in produzione ne sono installati 25 in /opt/rb-vecchi
-  (vedi install.sh) più 6 in /opt/rb-raccolta (vedi install-raccolta.sh).
+- Il repository contiene 59 file; in produzione ne sono installati 25 in /opt/rb-vecchi
+  (vedi install.sh) più 5 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
 - In produzione INPUT_TRUE_IS_OPEN=false e RELAY_PULSE_SECONDS=0.5, diversi dai default.
@@ -25,13 +26,18 @@ parte rete descrive l'impianto TP-Link rimosso il 24/09); stato della rete del 2
   vera (caso di ping con NoNewPrivileges, 25/09). Si verifica l'uscita dell'unità vera.
 
 ## Rete
-- Powerline D-Link DHP-W310AV: 192.168.1.66 casa, 192.168.1.67 garage.
-  L'AP del garage è l'unico con SSID Finanza.
-- Dagli adattatori si legge solo st_stats.php (GET, senza login).
-  Mai chiamare hedwig.cgi, pigwidgeon.cgi o reboot.php: scrivono o riavviano.
-- getcfg.php restituisce la configurazione con le password in chiaro: il suo output
-  non va mai salvato, registrato né committato.
-- Timestamp sempre dal Raspberry: gli adattatori hanno l'orologio fermo al 2000.
+- Powerline TP-Link dall'11/10/2026 (di nuovo, dopo la prova D-Link dal 24/09):
+  in casa un adattatore senza Wi-Fi né interfaccia web, quindi senza IP; in garage
+  un TL-WPA4220 con AP Wi-Fi integrato, 192.168.1.52 in DHCP (MAC 58:04:4F:51:1B:78),
+  da cui passano entrambi gli Shelly.
+- Il PLC casa non si può pingare: il riferimento lato casa è il router (.1).
+  Un guasto del PLC casa si vede come .52 KO con il router ok.
+- Dal TL-WPA4220 si misura solo il ping: nessun contatore PLC.
+- D-Link DHP-W310AV (.66 casa, .67 garage) dismessi: i loro dati restano nei CSV
+  storici. Se tornassero: da loro si legge solo st_stats.php (GET, senza login), mai
+  hedwig.cgi, pigwidgeon.cgi o reboot.php (scrivono o riavviano); getcfg.php dà le
+  password in chiaro e il suo output non va mai salvato, registrato né committato.
+- Timestamp sempre dal Raspberry, mai dall'orologio degli adattatori.
 
 ## Lavori previsti
 1. Notifica di irraggiungibilità CONDIZIONATA all'ultimo stato noto "aperto".
@@ -56,15 +62,17 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
 ./stato-rete.sh sul Raspberry riassume la rete su 24 ore e 7 giorni (sola lettura).
 
 ## Raccolta dati
-- Tre raccoglitori in raccolta/: rb-carica (energia Shelly .101), rb-plc
-  (contatori PLC .66 .67), rb-link (ping). Unità systemd permanenti separate
+- Due raccoglitori in raccolta/: rb-carica (energia Shelly .101) e rb-link (ping di
+  router, PLC garage .52 e Shelly). rb-plc (contatori dei D-Link) è dismesso
+  dall'11/10/2026: install-raccolta.sh ne ferma e rimuove unità e programma, i CSV
+  rb-plc-*.csv restano e stato_rete.py li legge ancora per le finestre che li
+  comprendono. Unità systemd permanenti separate
   dal basculante, utente di sistema rbraccolta, programmi in /opt/rb-raccolta,
   dati in /var/lib/rb-raccolta (RB_RACCOLTA_DIR).
 - Un CSV al giorno per raccoglitore (data locale nel nome, intestazione in ogni
   file), ts in secondi epoch. Colonne di rb-carica e rb-plc da non cambiare.
 - Sola lettura verso gli apparati: rb-carica solo Shelly.GetStatus e
-  Shelly.GetDeviceInfo, rb-plc solo
-  st_stats.php, rb-link solo ping. Stato ERR di rb-link = ping non eseguibile,
+  Shelly.GetDeviceInfo, rb-link solo ping. Stato ERR di rb-link = ping non eseguibile,
   dato mancante e non KO.
 - rb-link.service ha AmbientCapabilities=CAP_NET_RAW: sul Raspberry
   ping_group_range è "1 0" e con NoNewPrivileges la capability di

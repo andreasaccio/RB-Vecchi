@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installa o aggiorna i raccoglitori dati (rb-carica, rb-plc, rb-link).
+# Installa o aggiorna i raccoglitori dati (rb-carica, rb-link).
 # Idempotente. NON tocca il servizio del basculante (rb-vecchi.service).
 set -eu
 
@@ -13,8 +13,11 @@ SRC="$SCRIPT_DIR/raccolta"
 INSTALL_DIR=/opt/rb-raccolta
 DATA_DIR=/var/lib/rb-raccolta
 SERVICE_USER=rbraccolta
-PROGRAMMI="giornaliero.py rb-carica.py rb-plc.py rb-link.py stato_rete.py sistema.py"
-UNITA="rb-carica.service rb-plc.service rb-link.service"
+PROGRAMMI="giornaliero.py rb-carica.py rb-link.py stato_rete.py sistema.py"
+UNITA="rb-carica.service rb-link.service"
+# Raccoglitori dismessi: fermati, disabilitati e tolti da /etc e /opt.
+# I loro CSV in $DATA_DIR restano. rb-plc leggeva solo i D-Link (11/10/2026).
+DISMESSI="rb-plc"
 # Riepilogo powerline per la dashboard: oneshot lanciato dal timer ogni 60 s.
 RIEPILOGO="rb-stato-rete.service rb-stato-rete.timer"
 JSON="$DATA_DIR/stato-rete.json"
@@ -31,6 +34,15 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --no-create-home \
     --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
+
+for d in $DISMESSI; do
+  if [ -e "/etc/systemd/system/$d.service" ]; then
+    systemctl disable --now "$d.service"
+    rm -f "/etc/systemd/system/$d.service"
+    echo "$d.service dismessa: fermata, disabilitata e rimossa"
+  fi
+  rm -f "$INSTALL_DIR/$d.py"
+done
 
 install -d -m 0755 "$INSTALL_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0755 "$DATA_DIR"

@@ -10,6 +10,9 @@
 #   dell'adattatore (si riparte dal nuovo valore per tutti i contatori),
 #   altrimenti è un azzeramento di quel solo contatore (si riparte da lì);
 # - simmetria tx/rx fra .66 e .67: solo rapporto informativo.
+# I CSV di rb-plc sono solo storici (D-Link .66/.67, raccoglitore dismesso
+# con il ritorno ai TP-Link, 11/10/2026): si leggono ancora per le finestre
+# che li comprendono.
 # Con --json: riepilogo powerline per la dashboard (regole in classifica()).
 import argparse, csv, json, os, sys, time
 from datetime import date, datetime, timedelta
@@ -22,8 +25,9 @@ PASSO_PLC, BUCO_PLC = 120, 360
 CONTATORI = ("tx_pkt", "rx_pkt", "tx_drop", "rx_drop", "tx_byte", "rx_byte")
 NODI = {
     "192.168.1.1": "router",
-    "192.168.1.66": "PLC casa",
-    "192.168.1.67": "PLC garage",
+    "192.168.1.52": "PLC garage",
+    "192.168.1.66": "ex D-Link casa",
+    "192.168.1.67": "ex D-Link garage",
     "192.168.1.100": "Shelly basculante",
     "192.168.1.101": "Shelly ricarica",
 }
@@ -31,12 +35,20 @@ FINESTRE = {"24h": ("Ultime 24 ore", 86400), "7g": ("Ultimi 7 giorni", 7 * 86400
 
 # Regole del riepilogo powerline (--json), tutte qui. Valori iniziali, da
 # rivedere con i dati.
-CASA, GARAGE = "192.168.1.66", "192.168.1.67"
-ADATTATORI = {"casa": CASA, "garage": GARAGE}
+# Il PLC casa TP-Link non ha IP: il riferimento lato casa è il router. Un
+# guasto del PLC casa si vede quindi come PLC garage KO con il router ok.
+ROUTER, GARAGE = "192.168.1.1", "192.168.1.52"
+# IP dei D-Link letti da rb-plc (dismesso): solo per i dati storici.
+ADATTATORI = {"casa": "192.168.1.66", "garage": "192.168.1.67"}
 FINESTRA_RIEPILOGO = 86400        # s, le "24 h"
 DATI_VECCHI = 120                 # s: rb-link più vecchio di così -> non_disponibile
-GIRI_INTERROTTA = 2               # ultimi giri con .67 KO -> interrotta
-MAX_PERDITE_ISOLATE = 20          # oltre, sul .67 nelle 24 h -> instabile
+GIRI_INTERROTTA = 2               # ultimi giri con il PLC garage KO -> interrotta
+MAX_PERDITE_ISOLATE = 20          # oltre, sul PLC garage nelle 24 h -> instabile
+
+
+def breve(ip):
+    """Ultimo ottetto per i messaggi: 192.168.1.52 -> .52"""
+    return "." + ip.rsplit(".", 1)[1]
 
 
 # ---------------------------------------------------------------- lettura
@@ -199,16 +211,18 @@ def classifica(ultimi_giri, adesso, garage, plc):
     consecutivi = len(coda) == GIRI_INTERROTTA and all(
         b[0] - a[0] <= BUCO_LINK for a, b in zip(coda, coda[1:]))
     if consecutivi and all(g.get(GARAGE) == "KO" for _, g in coda):
-        if all(g.get(CASA) == "KO" for _, g in coda):
-            return "interrotta", "lato casa: non rispondono né il PLC casa (.66) né il PLC garage (.67)"
-        if all(g.get(CASA) == "ok" for _, g in coda):
-            return ("interrotta", "il PLC garage (.67) non risponde da %d giri, il PLC casa (.66) sì"
-                    % giri_ko_in_coda(ultimi_giri))
+        if all(g.get(ROUTER) == "KO" for _, g in coda):
+            return ("interrotta", "lato casa: non rispondono né il router (%s) né il PLC garage (%s)"
+                    % (breve(ROUTER), breve(GARAGE)))
+        if all(g.get(ROUTER) == "ok" for _, g in coda):
+            return ("interrotta", "il PLC garage (%s) non risponde da %d giri, il router (%s) sì"
+                    % (breve(GARAGE), giri_ko_in_coda(ultimi_giri), breve(ROUTER)))
 
     motivi = []
     if garage and garage["episodi"]:
-        motivi.append("%d episodi KO sul .67" % len(garage["episodi"])
-                      if len(garage["episodi"]) > 1 else "1 episodio KO sul .67")
+        n = len(garage["episodi"])
+        motivi.append("%d episodi KO sul %s" % (n, breve(GARAGE)) if n > 1
+                      else "1 episodio KO sul %s" % breve(GARAGE))
     scartati = sum(a["incrementi"]["tx_drop"] + a["incrementi"]["rx_drop"] for a in plc.values())
     if scartati:
         motivi.append("%d pacchetti PLC scartati" % scartati)
@@ -217,7 +231,7 @@ def classifica(ultimi_giri, adesso, garage, plc):
         motivi.append("%d riavvii di adattatore" % riavvii if riavvii > 1
                       else "1 riavvio di adattatore")
     if garage and garage["isolate"] > MAX_PERDITE_ISOLATE:
-        motivi.append("%d perdite isolate sul .67" % garage["isolate"])
+        motivi.append("%d perdite isolate sul %s" % (garage["isolate"], breve(GARAGE)))
     if motivi:
         return "instabile", "nelle 24 ore: " + ", ".join(motivi)
     return "stabile", "nelle 24 ore nessun episodio, scarto o riavvio"

@@ -10,7 +10,9 @@ import subprocess, sys, time
 
 from giornaliero import Giornaliero
 
-HOST = ["192.168.1.1", "192.168.1.66", "192.168.1.67",
+# Router, PLC garage TP-Link (TL-WPA4220), Shelly basculante e ricarica.
+# Il PLC casa TP-Link non ha IP: non si può pingare.
+HOST = ["192.168.1.1", "192.168.1.52",
         "192.168.1.100", "192.168.1.101"]
 PASSO = 5
 INTERVALLO_LOG = 3600

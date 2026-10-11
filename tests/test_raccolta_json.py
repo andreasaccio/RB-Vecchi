@@ -105,8 +105,7 @@ def test_carica_ultimo_json(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- sistema
 
 SYSTEMCTL = ("ActiveState=active\nId=rb-vecchi.service\n\n"
-             "Id=rb-carica.service\nActiveState=active\n\n"
-             "Id=rb-plc.service\nActiveState=failed\n\n"
+             "Id=rb-carica.service\nActiveState=failed\n\n"
              "Id=rb-link.service\nActiveState=activating\n\n"
              "Id=rb-stato-rete.timer\nActiveState=active\n")
 
@@ -134,9 +133,8 @@ def test_sistema_letture_locali(tmp_path: Path) -> None:
     assert d["uptime_s"] == 90061
     assert d["riavvio_richiesto"] is False
     assert d["disco_radice"]["totale_B"] > 0
-    assert d["unita"] == {"rb-vecchi.service": "active", "rb-carica.service": "active",
-                          "rb-plc.service": "failed", "rb-link.service": "activating",
-                          "rb-stato-rete.timer": "active"}
+    assert d["unita"] == {"rb-vecchi.service": "active", "rb-carica.service": "failed",
+                          "rb-link.service": "activating", "rb-stato-rete.timer": "active"}
 
     (radice / "var/run/reboot-required").write_text("*** System restart required ***\n")
     assert sistema.raccogli(str(radice), esegui)["riavvio_richiesto"] is True

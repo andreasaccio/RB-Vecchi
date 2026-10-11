@@ -21,20 +21,26 @@ if [ -d /opt/rb-raccolta ]; then
 else
   echo "MANCA /opt/rb-raccolta"; m=$((m+1))
 fi
-for u in rb-carica.service rb-plc.service rb-link.service rb-stato-rete.service rb-stato-rete.timer; do
+for u in rb-carica.service rb-link.service rb-stato-rete.service rb-stato-rete.timer; do
   if [ ! -e "/etc/systemd/system/$u" ]; then
     echo "MANCA /etc/systemd/system/$u"; m=$((m+1))
   elif ! cmp -s "/etc/systemd/system/$u" "$REPO/raccolta/$u"; then
     echo "DIFF $u"; m=$((m+1))
   fi
 done
+# Raccoglitori dismessi: non devono essere più installati.
+for d in rb-plc; do
+  if [ -e "/etc/systemd/system/$d.service" ] || [ -e "/opt/rb-raccolta/$d.py" ]; then
+    echo "DISMESSO ma ancora installato: $d (sudo ./install-raccolta.sh)"; m=$((m+1))
+  fi
+done
 [ "$m" -eq 0 ] && echo "raccolta allineata al repository"
 # Per ogni raccoglitore: stato dell'unità, età e stato dell'ultima riga (per
-# rb-plc l'ultimo campione di ogni adattatore, per rb-link l'ultimo giro).
+# rb-link l'ultimo giro).
 DATI=${RB_RACCOLTA_DIR:-/var/lib/rb-raccolta}
 OGGI=$(date +%F)
 ADESSO=$(date +%s)
-for u in rb-carica rb-plc rb-link; do
+for u in rb-carica rb-link; do
   f=$DATI/$u-$OGGI.csv
   attivo=$(systemctl show "$u" -p ActiveState --value)
   if [ ! -s "$f" ]; then
@@ -48,8 +54,6 @@ for u in rb-carica rb-plc rb-link; do
   esac
   case $u in
     rb-carica) stato=$(tail -n 1 "$f" | cut -d, -f2,3 | tr , " ") ;;
-    rb-plc) stato=$(tail -n 20 "$f" | awk -F, '$1 ~ /^[0-9]+$/ { s[$2] = $3 (($3 == "ok") ? "" : " " $4) }
-                    END { for (a in s) printf "%s%s %s", (n++ ? ", " : ""), a, s[a] }') ;;
     rb-link) stato=$(tail -n 20 "$f" | awk -F, -v t="$ts" '$1 == t { c[$3]++ }
                      END { printf "ok %d, KO %d, ERR %d", c["ok"], c["KO"], c["ERR"] }') ;;
   esac

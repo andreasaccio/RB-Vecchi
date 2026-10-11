@@ -7,8 +7,8 @@ import argparse, os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from giornaliero import directory, scrivi_json_atomico
 
-UNITA = ["rb-vecchi.service", "rb-carica.service", "rb-plc.service",
-         "rb-link.service", "rb-stato-rete.timer"]
+UNITA = ["rb-vecchi.service", "rb-carica.service", "rb-link.service",
+         "rb-stato-rete.timer"]
 
 
 def _leggi(radice, rel):

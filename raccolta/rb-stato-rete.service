@@ -1,6 +1,6 @@
 [Unit]
 Description=RB-Vecchi raccolta: riepilogo powerline e stato del Raspberry per la dashboard
-After=rb-link.service rb-plc.service
+After=rb-link.service
 
 [Service]
 Type=oneshot
