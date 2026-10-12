@@ -57,6 +57,8 @@ class Settings:
     log_level: str
     # File JSON scritti dalla raccolta dati (rb-raccolta): sola lettura.
     raccolta_dir: Path = Path("/var/lib/rb-raccolta")
+    # Shelly della ricarica: l'unico comando ammesso è chiudere il relè.
+    carica_shelly_host: str = "http://192.168.1.101"
 
     @property
     def telegram_enabled(self) -> bool:
@@ -77,6 +79,9 @@ def load_settings(env_file: str | None = None) -> Settings:
     host = os.getenv("SHELLY_HOST", "192.168.1.100").strip().rstrip("/")
     if not host.startswith(("http://", "https://")):
         host = f"http://{host}"
+    carica_host = os.getenv("CARICA_SHELLY_HOST", "192.168.1.101").strip().rstrip("/")
+    if not carica_host.startswith(("http://", "https://")):
+        carica_host = f"http://{carica_host}"
 
     return Settings(
         app_name=os.getenv("APP_NAME", "RB-Vecchi · Casa").strip(),
@@ -108,4 +113,5 @@ def load_settings(env_file: str | None = None) -> Settings:
         listen_port=_as_int("LISTEN_PORT", 8080, 1),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper().strip(),
         raccolta_dir=Path(os.getenv("RACCOLTA_DIR", "/var/lib/rb-raccolta")).expanduser(),
+        carica_shelly_host=carica_host,
     )

@@ -83,6 +83,10 @@
         <p class="carica-power"><strong id="caricaPower">—</strong> <span>W</span></p>
         <p id="caricaNote" class="powerline-reason">In attesa dei dati della ricarica…</p>
         <p id="caricaWarning" class="carica-warning hidden"></p>
+        <div class="carica-azioni">
+          <p id="caricaUltima" class="carica-ultima">Registro della ricarica in caricamento…</p>
+          <button id="caricaOraButton" class="secondary-button" type="button">Carica ora</button>
+        </div>
       </section>
 
       <section id="powerlineCard" class="powerline-card pl-non_disponibile" aria-live="polite">
@@ -134,6 +138,19 @@
         </div>
         <div id="eventList" class="event-list">
           <p class="empty-state">Caricamento storico…</p>
+        </div>
+      </section>
+
+      <section class="history-card">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Registro ricarica</p>
+            <h3>Accensioni della presa</h3>
+          </div>
+          <span class="history-badge">ultimi 7 giorni</span>
+        </div>
+        <div id="caricaRegistro" class="event-list">
+          <p class="empty-state">Caricamento registro…</p>
         </div>
       </section>
     </main>

@@ -13,7 +13,7 @@ SRC="$SCRIPT_DIR/raccolta"
 INSTALL_DIR=/opt/rb-raccolta
 DATA_DIR=/var/lib/rb-raccolta
 SERVICE_USER=rbraccolta
-PROGRAMMI="giornaliero.py rb-carica.py rb-link.py stato_rete.py sistema.py"
+PROGRAMMI="giornaliero.py rb-carica.py rb-link.py stato_rete.py sistema.py sessioni_carica.py"
 UNITA="rb-carica.service rb-link.service"
 # Raccoglitori dismessi: fermati, disabilitati e tolti da /etc e /opt.
 # I loro CSV in $DATA_DIR restano. rb-plc leggeva solo i D-Link (11/10/2026).
@@ -52,7 +52,8 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
 for f in $PROGRAMMI; do
   install -m 0644 "$SRC/$f" "$INSTALL_DIR/$f"
 done
-chmod 0755 "$INSTALL_DIR"/rb-*.py "$INSTALL_DIR/stato_rete.py" "$INSTALL_DIR/sistema.py"
+chmod 0755 "$INSTALL_DIR"/rb-*.py "$INSTALL_DIR/stato_rete.py" "$INSTALL_DIR/sistema.py" \
+  "$INSTALL_DIR/sessioni_carica.py"
 for u in $UNITA $RIEPILOGO; do
   install -m 0644 "$SRC/$u" "/etc/systemd/system/$u"
 done
@@ -105,7 +106,7 @@ t0=$(date +%s)
 systemctl start rb-stato-rete.service || true
 t1=$(date +%s)
 echo "rb-stato-rete.service: giro completo in $((t1 - t0)) s"
-for j in stato-rete.json sistema.json carica-ultimo.json; do
+for j in stato-rete.json sistema.json carica-ultimo.json carica-registro.json; do
   g=$(sed -n 's/^ "generato": \([0-9]*\).*$/\1/p' "$DATA_DIR/$j" 2>/dev/null)
   if [ -n "$g" ] && [ "$((t1 - g))" -le 60 ]; then
     echo "$j: scritto $((t1 - g)) s fa"

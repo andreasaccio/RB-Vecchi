@@ -21,6 +21,16 @@ class ShellyStatus:
     firmware: str | None
 
 
+def raise_for_rpc_error(payload: Any) -> None:
+    if isinstance(payload, dict) and "error" in payload:
+        error = payload["error"]
+        if isinstance(error, dict):
+            message = error.get("message") or str(error)
+        else:
+            message = str(error)
+        raise ShellyError(f"Errore RPC Shelly: {message}")
+
+
 class ShellyClient:
     def __init__(
         self,
@@ -41,13 +51,7 @@ class ShellyClient:
             self.session.auth = HTTPDigestAuth(username or "admin", password)
 
     def _raise_for_rpc_error(self, payload: Any) -> None:
-        if isinstance(payload, dict) and "error" in payload:
-            error = payload["error"]
-            if isinstance(error, dict):
-                message = error.get("message") or str(error)
-            else:
-                message = str(error)
-            raise ShellyError(f"Errore RPC Shelly: {message}")
+        raise_for_rpc_error(payload)
 
     def get_status(self) -> ShellyStatus:
         url = f"{self.base_url}/rpc/Shelly.GetStatus"
@@ -141,3 +145,29 @@ class ShellyClient:
 
         self._raise_for_rpc_error(payload)
         return payload
+
+
+class PresaRicarica:
+    """Shelly della ricarica (192.168.1.101). L'unico comando che RB-Vecchi può
+    dare è la chiusura del relè ("Carica ora"): a riaprirlo, a fine carica o
+    se non c'è niente da caricare, è lo script ricarica-notturna sullo Shelly."""
+
+    def __init__(self, base_url: str, timeout: float = 4.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "RB-Vecchi/1.0"})
+
+    def accendi(self) -> bool:
+        """Chiude il relè. Restituisce True se era già chiuso."""
+        url = f"{self.base_url}/rpc/Switch.Set"
+        try:
+            response = self.session.post(url, json={"id": 0, "on": True}, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise ShellyError(f"Shelly della ricarica non raggiungibile: {exc}") from exc
+        except ValueError as exc:
+            raise ShellyError("Risposta JSON non valida dallo Shelly della ricarica") from exc
+        raise_for_rpc_error(payload)
+        return isinstance(payload, dict) and payload.get("was_on") is True

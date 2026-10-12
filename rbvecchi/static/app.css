@@ -234,6 +234,9 @@ main { display: grid; gap: 16px; }
 .carica-power span { color: var(--muted); font-size: 1.1rem; font-weight: 720; }
 .carica-non_disponibile { background: linear-gradient(145deg, rgba(242,244,247,0.98), rgba(255,255,255,0.94)); }
 .carica-non_disponibile .carica-power strong { color: var(--muted); }
+.carica-azioni { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.carica-ultima { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.35; }
+.carica-azioni .secondary-button { flex: none; white-space: nowrap; }
 .carica-warning { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--danger); font-weight: 750; line-height: 1.4; }
 
 .details-link {

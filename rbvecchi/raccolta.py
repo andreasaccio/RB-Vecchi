@@ -15,15 +15,21 @@ from typing import Any
 STATO_RETE = "stato-rete.json"
 CARICA = "carica-ultimo.json"
 SISTEMA = "sistema.json"
+REGISTRO_CARICA = "carica-registro.json"
 
 STATI_POWERLINE = {"stabile", "instabile", "interrotta", "non_disponibile"}
 MAX_ETA_POWERLINE = 300
 MAX_ETA_CARICA = 60
 MAX_ETA_SISTEMA = 300
+MAX_ETA_REGISTRO = 300
+MAX_SESSIONI = 50
+CAUSE = {"programma", "manuale", "ritorno_corrente", "gia_accesa"}
+ESITI = {"fine_carica", "senza_carica", "interrotta", "riavvio", "in_corso"}
 MAX_BYTE = 64 * 1024
 # Il relè lo apre lo script ricarica-notturna sullo Shelly a fine carica e lo
-# richiude alle 01:00: relè aperto è lo stato normale, non un guasto.
-NOTA_RELE_APERTO = "presa spenta dal programma di ricarica: si riaccende alle 01:00"
+# richiude alle 01:00 (o "Carica ora"): relè aperto è lo stato normale.
+NOTA_RELE_APERTO = ("presa spenta dal programma di ricarica: si riaccende alle 01:00 "
+                    "o con «Carica ora»")
 CONTATORI = ("tx_pkt", "rx_pkt", "tx_drop", "rx_drop", "tx_byte", "rx_byte")
 
 
@@ -192,6 +198,44 @@ def leggi_carica(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
     if esito["rele_chiuso"] is False:
         esito["nota"] = NOTA_RELE_APERTO
     return esito
+
+
+def _sessione(dati: Any) -> dict[str, Any] | None:
+    if not isinstance(dati, dict):
+        return None
+    inizio = _numero(dati.get("inizio"))
+    if inizio is None or dati.get("causa") not in CAUSE or dati.get("esito") not in ESITI:
+        return None
+    return {
+        "inizio": inizio,
+        "inizio_approssimato": dati.get("inizio_approssimato") is True,
+        "causa": dati["causa"],
+        "fine": _numero(dati.get("fine")),
+        "fine_approssimata": dati.get("fine_approssimata") is True,
+        "esito": dati["esito"],
+        "carica_da": _numero(dati.get("carica_da")),
+        "carica_a": _numero(dati.get("carica_a")),
+        "energia_Wh": _numero(dati.get("energia_Wh")),
+        "potenza_max_W": _numero(dati.get("potenza_max_W")),
+        "in_carica": dati.get("in_carica") is True,
+    }
+
+
+def leggi_registro_carica(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
+    """Sessioni di ricarica ricostruite dalla raccolta (raccolta/sessioni_carica.py)."""
+    adesso = time.time() if adesso is None else adesso
+    try:
+        dati = _leggi(percorso)
+        generato = _numero(dati.get("generato"))
+        eta = _eta(generato, adesso, MAX_ETA_REGISTRO, "registro della ricarica")
+        grezze = dati.get("sessioni")
+        if not isinstance(grezze, list):
+            raise NonDisponibile("file della raccolta dati non valido")
+    except NonDisponibile as e:
+        return {"stato": "non_disponibile", "motivo": str(e), "eta_s": None, "sessioni": []}
+    sessioni = [s for s in map(_sessione, grezze[:MAX_SESSIONI]) if s is not None]
+    return {"stato": "ok", "motivo": "", "generato": generato, "eta_s": eta,
+            "dal": _numero(dati.get("dal")), "sessioni": sessioni}
 
 
 # ---------------------------------------------------------------- Raspberry

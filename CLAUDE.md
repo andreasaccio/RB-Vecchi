@@ -9,8 +9,8 @@ del 25/09/2026 (periodo D-Link, storico).
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 60 file; in produzione ne sono installati 25 in /opt/rb-vecchi
-  (vedi install.sh) più 5 in /opt/rb-raccolta (vedi install-raccolta.sh).
+- Il repository contiene 63 file; in produzione ne sono installati 25 in /opt/rb-vecchi
+  (vedi install.sh) più 6 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
 - In produzione INPUT_TRUE_IS_OPEN=false e RELAY_PULSE_SECONDS=0.5, diversi dai default.
@@ -89,18 +89,29 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
     raccolta/stato_rete.py;
   - sistema.json: stato del Raspberry (raccolta/sistema.py, solo letture locali);
   - carica-ultimo.json: ultimo campione dello Shelly ricarica, scritto da
-    rb-carica a ogni campione, con modello e firmware da GetDeviceInfo.
-  I primi due li scrive il oneshot rb-stato-rete.service, lanciato ogni 60 s da
-  rb-stato-rete.timer.
+    rb-carica a ogni campione, con modello e firmware da GetDeviceInfo;
+  - carica-registro.json: sessioni di ricarica degli ultimi 7 giorni (al massimo
+    30), ricostruite dai CSV di rb-carica da raccolta/sessioni_carica.py. Una
+    sessione va dalla chiusura all'apertura del relè; causa (programma /
+    manuale / ritorno_corrente / gia_accesa), esito (fine_carica / senza_carica
+    / interrotta / riavvio / in_corso), energia dal contatore. Un cambio che cade
+    in un buco di dati ha l'orario approssimato e così è marcato.
+  stato-rete.json, sistema.json e carica-registro.json li scrive il oneshot
+  rb-stato-rete.service, lanciato ogni 60 s da rb-stato-rete.timer.
 - rbvecchi legge SOLO file della raccolta in /var/lib/rb-raccolta, in sola
   lettura (rbvecchi/raccolta.py), da endpoint separati: /api/powerline,
-  /api/carica, /api/sistema. Nessun nuovo client di rete dentro rbvecchi e
+  /api/carica, /api/carica/registro, /api/sistema. Unica eccezione di rete:
+  POST /api/carica/avvia ("Carica ora": login, CSRF, al massimo una volta ogni
+  30 s) chiude il relè dello Shelly .101 (PresaRicarica in rbvecchi/shelly.py,
+  host CARICA_SHELLY_HOST, predefinito 192.168.1.101) e registra il comando nella
+  tabella commands come CARICA_ON. Nessun altro client di rete dentro rbvecchi e
   nessuna chiamata in più allo Shelly .100: per il basculante si usa solo ciò
   che il monitor legge già. Nessuna analisi in rbvecchi, nessun effetto su
   /api/status, sul monitor o sulle notifiche. File assente, illeggibile, non
   valido o vecchio (carica-ultimo.json 60 s, gli altri 5 minuti) =
   "non disponibile".
-- Pagine: principale (basculante, powerline, comando, ricarica, statistiche) e
+- Pagine: principale (basculante, powerline, comando, ricarica con "Carica ora",
+  statistiche, registro eventi, registro ricarica) e
   /dettagli (Shelly basculante, Shelly ricarica, powerline, Raspberry), con la
   stessa autenticazione. Nessun segreto nelle pagine.
 - Il Wi-Fi dello Shelly misura solo il salto Shelly-AP, non la salute della
@@ -119,8 +130,9 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   Fuori dalla carica il relè aperto è lo stato normale e la dashboard lo mostra
   come nota, non come avviso. Per cambiare lo script: si modifica il file nel
   repository e lo si reinstalla a mano sullo Shelly.
-- Per RB-Vecchi resta in SOLA LETTURA: nessuna chiamata che scriva
-  (Switch.Set, Switch.Toggle, SetConfig, Reboot, Script.*). Chiamate ammesse:
+- RB-Vecchi fa una sola scrittura: Switch.Set {"id": 0, "on": true} da "Carica
+  ora". Mai spegnere da RB-Vecchi (lo spegnimento è solo dello script), mai
+  Switch.Toggle, SetConfig, Reboot, Script.*. Letture della raccolta:
   Shelly.GetStatus (rb-carica, ogni 10 s) e Shelly.GetDeviceInfo (rb-carica,
   all'avvio e poi ogni 6 ore).
 - initial_state=on e in_mode=detached sono intenzionali: dopo un blackout il relè

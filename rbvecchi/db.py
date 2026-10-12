@@ -151,13 +151,28 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def log_command(self, now: float, success: bool, detail: str) -> None:
+    def log_command(
+        self, now: float, success: bool, detail: str, command_type: str = "PULSE"
+    ) -> None:
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO commands(command_ts, command_type, success, detail) "
-                "VALUES (?, 'PULSE', ?, ?)",
-                (now, int(success), detail[:1000]),
+                "VALUES (?, ?, ?, ?)",
+                (now, command_type, int(success), detail[:1000]),
             )
+
+    def list_commands(self, command_type: str, limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 200))
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT command_ts, success, detail FROM commands "
+                "WHERE command_type = ? ORDER BY command_ts DESC LIMIT ?",
+                (command_type, limit),
+            ).fetchall()
+        return [
+            {"ts": row["command_ts"], "ok": bool(row["success"]), "dettaglio": row["detail"]}
+            for row in rows
+        ]
 
     def stats_between(self, start: float, end: float) -> dict[str, int]:
         if end <= start:

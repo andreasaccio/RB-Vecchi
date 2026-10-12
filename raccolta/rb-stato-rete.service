@@ -1,6 +1,6 @@
 [Unit]
-Description=RB-Vecchi raccolta: riepilogo powerline e stato del Raspberry per la dashboard
-After=rb-link.service
+Description=RB-Vecchi raccolta: riepilogo powerline, registro ricarica e stato del Raspberry per la dashboard
+After=rb-link.service rb-carica.service
 
 [Service]
 Type=oneshot
@@ -10,10 +10,11 @@ Environment=RB_RACCOLTA_DIR=/var/lib/rb-raccolta
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0022
-# Due uscite indipendenti: il "-" fa girare la seconda anche se la prima fallisce;
+# Uscite indipendenti: il "-" fa girare le altre anche se una fallisce;
 # la dashboard riconosce un file non aggiornato dalla sua età.
 ExecStart=-/usr/bin/python3 /opt/rb-raccolta/stato_rete.py --json --uscita /var/lib/rb-raccolta/stato-rete.json
 ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sistema.py --uscita /var/lib/rb-raccolta/sistema.json
+ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sessioni_carica.py --uscita /var/lib/rb-raccolta/carica-registro.json
 TimeoutStartSec=50
 
 NoNewPrivileges=true

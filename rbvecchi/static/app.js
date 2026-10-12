@@ -24,6 +24,9 @@ const elements = {
   caricaPower: document.getElementById("caricaPower"),
   caricaNote: document.getElementById("caricaNote"),
   caricaWarning: document.getElementById("caricaWarning"),
+  caricaUltima: document.getElementById("caricaUltima"),
+  caricaOraButton: document.getElementById("caricaOraButton"),
+  caricaRegistro: document.getElementById("caricaRegistro"),
   eventList: document.getElementById("eventList"),
   telegramTestButton: document.getElementById("telegramTestButton"),
   telegramTestResult: document.getElementById("telegramTestResult"),
@@ -205,6 +208,130 @@ async function loadCarica() {
   }
 }
 
+const CAUSE_CARICA = {
+  programma: "programma delle 01:00",
+  manuale: "accesa a mano",
+  ritorno_corrente: "ritorno della corrente",
+  gia_accesa: "già accesa",
+};
+const ESITI_CARICA = {
+  fine_carica: "spenta a fine carica",
+  senza_carica: "niente da caricare",
+  interrotta: "spenta durante la carica",
+  riavvio: "Shelly riavviato",
+};
+
+function formatWh(value) {
+  if (value >= 1000) {
+    return `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 2 }).format(value / 1000)} kWh`;
+  }
+  return `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: value < 100 ? 1 : 0 }).format(value)} Wh`;
+}
+
+function sessionTitle(s) {
+  if (s.esito === "in_corso") return s.in_carica ? "In carica" : "Presa accesa, in attesa";
+  if (s.carica_da && s.energia_Wh !== null) return `Carica · ${formatWh(s.energia_Wh)}`;
+  return s.carica_da ? "Carica" : "Niente da caricare";
+}
+
+function sessionText(s, conEsito = true) {
+  const circa = (flag) => (flag ? " circa" : "");
+  const parts = [`${formatEventDate(s.inizio)}${circa(s.inizio_approssimato)}`];
+  if (s.fine) parts[0] += ` → ${formatEventDate(s.fine)}${circa(s.fine_approssimata)}`;
+  parts.push(CAUSE_CARICA[s.causa] || s.causa);
+  if (conEsito && s.esito !== "in_corso") parts.push(ESITI_CARICA[s.esito] || s.esito);
+  return parts.join(" · ");
+}
+
+function registroItem(icon, typeClass, title, text, right) {
+  const item = document.createElement("article");
+  item.className = `event-item ${typeClass}`;
+  const iconBox = document.createElement("div");
+  iconBox.className = "event-icon";
+  iconBox.textContent = icon;
+  const main = document.createElement("div");
+  main.className = "event-main";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const span = document.createElement("span");
+  span.textContent = text;
+  main.append(strong, span);
+  const side = document.createElement("div");
+  side.className = "event-duration";
+  side.textContent = right;
+  item.append(iconBox, main, side);
+  return item;
+}
+
+function renderRegistroCarica(registro, comandi) {
+  const sessioni = registro?.stato === "ok" ? registro.sessioni : [];
+  const voci = [
+    ...sessioni.map((s) => ({ ts: s.inizio, s })),
+    ...(Array.isArray(comandi) ? comandi : []).map((c) => ({ ts: c.ts, c })),
+  ].sort((a, b) => b.ts - a.ts);
+
+  const ultima = sessioni[0];
+  if (registro?.stato !== "ok") {
+    elements.caricaUltima.textContent = `Registro non disponibile: ${registro?.motivo || "dati assenti"}.`;
+  } else if (!ultima) {
+    elements.caricaUltima.textContent = "Nessuna accensione della presa negli ultimi 7 giorni.";
+  } else {
+    elements.caricaUltima.textContent = `Ultima: ${sessionText(ultima)}`
+      + (ultima.carica_da && ultima.energia_Wh !== null ? ` · ${formatWh(ultima.energia_Wh)}` : "");
+  }
+
+  if (voci.length === 0) {
+    const vuoto = document.createElement("p");
+    vuoto.className = "empty-state";
+    vuoto.textContent = registro?.stato === "ok"
+      ? "Nessuna accensione della presa negli ultimi 7 giorni."
+      : `Registro non disponibile: ${registro?.motivo || "dati assenti"}.`;
+    elements.caricaRegistro.replaceChildren(vuoto);
+    return;
+  }
+  elements.caricaRegistro.replaceChildren(...voci.map(({ s, c }) => {
+    if (c) {
+      return registroItem("▸", "event-initial", c.ok ? "Carica ora dall'app" : "Carica ora non riuscita",
+        `${formatEventDate(c.ts)} · ${c.dettaglio || ""}`, "");
+    }
+    const durata = s.fine ? formatDuration(s.fine - s.inizio, true) : "in corso";
+    const typeClass = s.esito === "in_corso" ? "event-open" : s.carica_da ? "event-close" : "event-initial";
+    // "Niente da caricare" è già nel titolo
+    return registroItem(s.carica_da ? "⚡" : "•", typeClass, sessionTitle(s),
+      sessionText(s, s.esito !== "senza_carica"), durata);
+  }));
+}
+
+async function loadRegistroCarica() {
+  try {
+    const payload = await apiFetch("/api/carica/registro");
+    renderRegistroCarica(payload.registro, payload.comandi);
+  } catch (error) {
+    renderRegistroCarica({ stato: "non_disponibile", motivo: "dati non raggiungibili dalla dashboard" }, []);
+  }
+}
+
+const CARICA_ORA_COOLDOWN_MS = 30000;
+
+async function sendCaricaOra() {
+  elements.caricaOraButton.disabled = true;
+  try {
+    const payload = await apiFetch("/api/carica/avvia", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    });
+    showToast(payload.message || "Presa accesa");
+    setTimeout(loadCarica, 3000);
+    setTimeout(loadRegistroCarica, 3000);
+    setTimeout(loadRegistroCarica, 70000);
+  } catch (error) {
+    showToast(error.message || "Comando non riuscito", true);
+    loadRegistroCarica();
+  } finally {
+    setTimeout(() => { elements.caricaOraButton.disabled = false; }, CARICA_ORA_COOLDOWN_MS);
+  }
+}
+
 function renderEvents(events) {
   if (!Array.isArray(events) || events.length === 0) {
     elements.eventList.innerHTML = '<p class="empty-state">Nessun evento registrato.</p>';
@@ -369,6 +496,7 @@ elements.commandDialog?.addEventListener("close", () => {
 });
 
 elements.telegramTestButton?.addEventListener("click", sendTelegramTest);
+elements.caricaOraButton?.addEventListener("click", sendCaricaOra);
 
 function updateClock() {
   elements.footerClock.textContent = new Intl.DateTimeFormat("it-IT", {
@@ -383,10 +511,12 @@ function updateClock() {
 loadDashboard(true);
 loadPowerline();
 loadCarica();
+loadRegistroCarica();
 updateClock();
 setInterval(loadStatus, 2500);
 setInterval(loadPowerline, 30000);
 setInterval(loadCarica, 10000);
+setInterval(loadRegistroCarica, 60000);
 setInterval(() => loadDashboard(false), 15000);
 setInterval(updateClock, 1000);
 

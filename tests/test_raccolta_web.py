@@ -136,7 +136,8 @@ def test_carica_rele_aperto_e_una_nota_non_un_avviso(tmp_path: Path) -> None:
     r = raccolta.leggi_carica(scrivi_carica(tmp_path, output=False, apower_W=0.0), adesso=1005)
     assert r["stato"] == "ok" and r["potenza_W"] == 0.0 and r["rele_chiuso"] is False
     assert r["avviso"] is None
-    assert r["nota"] == "presa spenta dal programma di ricarica: si riaccende alle 01:00"
+    assert r["nota"] == ("presa spenta dal programma di ricarica: si riaccende alle 01:00 "
+                         "o con «Carica ora»")
 
 
 def test_carica_mancante_vecchia_corrotta_ko(tmp_path: Path) -> None:

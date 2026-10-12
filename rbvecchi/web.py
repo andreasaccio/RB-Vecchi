@@ -26,11 +26,12 @@ from .db import Database
 from .monitor import GarageMonitor
 from .notifier import TelegramError, TelegramNotifier
 from . import raccolta
-from .shelly import ShellyClient
+from .shelly import PresaRicarica, ShellyClient, ShellyError
 
 LOGGER = logging.getLogger(__name__)
 
 TELEGRAM_TEST_COOLDOWN_SECONDS = 30.0
+CARICA_COOLDOWN_SECONDS = 30.0
 
 TELEGRAM_ERROR_HINTS = {
     401: "Token del bot non valido: controllare TELEGRAM_BOT_TOKEN.",
@@ -64,6 +65,7 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
         switch_id=settings.shelly_switch_id,
         timeout=settings.shelly_timeout_seconds,
     )
+    presa = PresaRicarica(settings.carica_shelly_host, timeout=settings.shelly_timeout_seconds)
     notifier = TelegramNotifier(
         settings.telegram_bot_token,
         settings.telegram_chat_id,
@@ -220,6 +222,52 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
     @login_required
     def api_sistema():
         return leggi_raccolta(raccolta.leggi_sistema, raccolta.SISTEMA, "sistema")
+
+    @app.get("/api/carica/registro")
+    @login_required
+    def api_carica_registro():
+        try:
+            registro = raccolta.leggi_registro_carica(settings.raccolta_dir / raccolta.REGISTRO_CARICA)
+        except Exception:
+            LOGGER.exception("Lettura del registro della ricarica fallita")
+            registro = {"stato": "non_disponibile", "motivo": "errore interno di lettura",
+                        "eta_s": None, "sessioni": []}
+        return jsonify({"ok": True, "registro": registro,
+                        "comandi": database.list_commands("CARICA_ON", limit=20)})
+
+    carica_lock = threading.Lock()
+    ultima_carica_ora = -CARICA_COOLDOWN_SECONDS
+
+    @app.post("/api/carica/avvia")
+    @login_required
+    def api_carica_avvia():
+        # Unica scrittura di RB-Vecchi verso lo Shelly della ricarica: chiude il
+        # relè. Lo riapre lo script ricarica-notturna sullo Shelly.
+        nonlocal ultima_carica_ora
+        require_csrf()
+        now = time.monotonic()
+        with carica_lock:
+            remaining = CARICA_COOLDOWN_SECONDS - (now - ultima_carica_ora)
+            if remaining > 0:
+                return jsonify({"ok": False,
+                                "error": f"Attendere {math.ceil(remaining)} s prima di riprovare",
+                                "retry_after": math.ceil(remaining)}), 429
+            ultima_carica_ora = now
+        try:
+            era_accesa = presa.accendi()
+        except ShellyError as exc:
+            with carica_lock:
+                ultima_carica_ora = -CARICA_COOLDOWN_SECONDS
+            database.log_command(time.time(), False, str(exc), "CARICA_ON")
+            LOGGER.warning("Carica ora non riuscita: %s", exc)
+            return jsonify({"ok": False, "error": str(exc)}), 503
+        detail = "presa già accesa" if era_accesa else "presa accesa"
+        database.log_command(time.time(), True, detail, "CARICA_ON")
+        LOGGER.info("Carica ora dalla dashboard: %s", detail)
+        message = ("La presa era già accesa" if era_accesa else
+                   "Presa accesa: se l'auto ha bisogno di carica parte subito, "
+                   "altrimenti lo Shelly la rispegne entro 5 minuti")
+        return jsonify({"ok": True, "message": message, "era_accesa": era_accesa})
 
     @app.get("/api/events")
     @login_required
