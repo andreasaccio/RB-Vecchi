@@ -21,7 +21,9 @@ MAX_ETA_POWERLINE = 300
 MAX_ETA_CARICA = 60
 MAX_ETA_SISTEMA = 300
 MAX_BYTE = 64 * 1024
-AVVISO_RELE_APERTO = "relè della presa aperto: la ricarica non ha corrente"
+# Il relè lo apre lo script ricarica-notturna sullo Shelly a fine carica e lo
+# richiude alle 01:00: relè aperto è lo stato normale, non un guasto.
+NOTA_RELE_APERTO = "presa spenta dal programma di ricarica: si riaccende alle 01:00"
 CONTATORI = ("tx_pkt", "rx_pkt", "tx_drop", "rx_drop", "tx_byte", "rx_byte")
 
 
@@ -157,7 +159,8 @@ def leggi_carica(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
         ts = _numero(dati.get("ts"))
         eta = _eta(ts, adesso, MAX_ETA_CARICA, "dati della ricarica")
     except NonDisponibile as e:
-        return {"stato": "non_disponibile", "motivo": str(e), "eta_s": None, "avviso": None}
+        return {"stato": "non_disponibile", "motivo": str(e), "eta_s": None, "avviso": None,
+                "nota": None}
 
     esito = {
         "stato": "ok", "motivo": "", "ts": ts, "eta_s": eta,
@@ -176,6 +179,7 @@ def leggi_carica(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
         "info_ts": _numero(dati.get("info_ts")),
         "ultimo_ok": _numero(dati.get("ultimo_ok")),
         "avviso": None,
+        "nota": None,
     }
     if dati.get("stato") != "ok":
         errore = _testo(dati.get("errore"))
@@ -184,9 +188,9 @@ def leggi_carica(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
         return esito
     if esito["potenza_W"] is None or esito["rele_chiuso"] is None:
         return {"stato": "non_disponibile", "motivo": "file della raccolta dati non valido",
-                "eta_s": None, "avviso": None}
+                "eta_s": None, "avviso": None, "nota": None}
     if esito["rele_chiuso"] is False:
-        esito["avviso"] = AVVISO_RELE_APERTO
+        esito["nota"] = NOTA_RELE_APERTO
     return esito
 
 

@@ -128,13 +128,15 @@ def test_carica_valida(tmp_path: Path) -> None:
     r = raccolta.leggi_carica(scrivi_carica(tmp_path), adesso=1030)
     assert (r["stato"], r["eta_s"], r["potenza_W"], r["rele_chiuso"]) == ("ok", 30, 412.34, True)
     assert (r["modello"], r["firmware"], r["reset_reason"]) == ("S3SW-001P16EU", "2.0.1", 3)
-    assert r["avviso"] is None
+    assert r["avviso"] is None and r["nota"] is None
 
 
-def test_carica_rele_aperto_da_avviso(tmp_path: Path) -> None:
+def test_carica_rele_aperto_e_una_nota_non_un_avviso(tmp_path: Path) -> None:
+    # Il relè lo apre lo script ricarica-notturna a fine carica: stato normale.
     r = raccolta.leggi_carica(scrivi_carica(tmp_path, output=False, apower_W=0.0), adesso=1005)
-    assert r["stato"] == "ok" and r["potenza_W"] == 0.0
-    assert r["avviso"] == "relè della presa aperto: la ricarica non ha corrente"
+    assert r["stato"] == "ok" and r["potenza_W"] == 0.0 and r["rele_chiuso"] is False
+    assert r["avviso"] is None
+    assert r["nota"] == "presa spenta dal programma di ricarica: si riaccende alle 01:00"
 
 
 def test_carica_mancante_vecchia_corrotta_ko(tmp_path: Path) -> None:
@@ -152,7 +154,7 @@ def test_carica_mancante_vecchia_corrotta_ko(tmp_path: Path) -> None:
         p.write_text(contenuto)
         r = raccolta.leggi_carica(p, adesso=1000)
         assert r["stato"] == "non_disponibile" and "non valido" in r["motivo"], contenuto
-        assert r["avviso"] is None
+        assert r["avviso"] is None and r["nota"] is None
 
     p.write_text(json.dumps({"ts": 1000.0, "stato": "KO", "errore": "TimeoutError"}))
     r = raccolta.leggi_carica(p, adesso=1005)
@@ -165,7 +167,8 @@ def test_endpoint_carica(tmp_path: Path) -> None:
     assert c.get("/api/carica").get_json()["carica"]["stato"] == "non_disponibile"
     scrivi_carica(tmp_path, ts=time.time() - 5, output=False)
     body = c.get("/api/carica").get_json()
-    assert body["ok"] is True and body["carica"]["avviso"].startswith("relè della presa aperto")
+    assert body["ok"] is True and body["carica"]["avviso"] is None
+    assert body["carica"]["nota"].startswith("presa spenta dal programma")
     scrivi_carica(tmp_path, ts=time.time() - 120)
     assert c.get("/api/carica").get_json()["carica"]["stato"] == "non_disponibile"
     (tmp_path / raccolta.CARICA).write_text("\x00rotto")

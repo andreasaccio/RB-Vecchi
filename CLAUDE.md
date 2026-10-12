@@ -9,7 +9,7 @@ del 25/09/2026 (periodo D-Link, storico).
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 59 file; in produzione ne sono installati 25 in /opt/rb-vecchi
+- Il repository contiene 60 file; in produzione ne sono installati 25 in /opt/rb-vecchi
   (vedi install.sh) più 5 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
@@ -109,16 +109,30 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   telefono continua a usare i file vecchi dalla cache.
 
 ## Shelly ricarica quadriciclo (192.168.1.101)
-- Shelly 1PM Gen3 (S3SW-001P16EU), firmware 2.0.1. Il caricabatterie è alimentato
-  attraverso il relè.
-- Per RB-Vecchi è in SOLA LETTURA: nessuna chiamata che scriva
-  (Switch.Set, Switch.Toggle, SetConfig, Reboot). Chiamate ammesse:
+- Shelly 1PM Gen3 (S3SW-001P16EU), firmware 2.0.1. Il caricabatterie della Tazzari
+  è alimentato attraverso il relè.
+- Il relè lo comanda shelly/ricarica-notturna.js, che gira SULLO Shelly (installato
+  a mano dalla pagina web: Scripts, "Run on startup"), più uno Schedule dello Shelly
+  che chiude il relè ogni giorno alle 01:00. Ogni chiusura del relè (01:00, manuale,
+  ritorno della corrente) apre una sessione: senza carica entro 5 min lo script apre
+  il relè; dopo una carica lo apre quando la potenza resta sotto 20 W per 10 min.
+  Fuori dalla carica il relè aperto è lo stato normale e la dashboard lo mostra
+  come nota, non come avviso. Per cambiare lo script: si modifica il file nel
+  repository e lo si reinstalla a mano sullo Shelly.
+- Per RB-Vecchi resta in SOLA LETTURA: nessuna chiamata che scriva
+  (Switch.Set, Switch.Toggle, SetConfig, Reboot, Script.*). Chiamate ammesse:
   Shelly.GetStatus (rb-carica, ogni 10 s) e Shelly.GetDeviceInfo (rb-carica,
   all'avvio e poi ogni 6 ore).
-- Relè sempre chiuso. initial_state=on e in_mode=detached sono intenzionali:
-  con i valori di fabbrica (match_input, follow) il relè resta aperto dopo
-  ogni blackout e la carica non riparte.
-- Timestamp dal Raspberry, non dall'orologio dello Shelly.
+- initial_state=on e in_mode=detached sono intenzionali: dopo un blackout il relè
+  si richiude e lo script decide se c'è da caricare.
+- Assorbimenti misurati l'11/10/2026: caricabatterie senza auto 1,3 W; standby a
+  fine carica 7,8 W (circa 30 VA); carica 850-880 W con rampa finale di 2-3 min e
+  stacco netto; ricariche brevi di mantenimento 225-235 W per circa 7 min (circa
+  28 Wh), la prima 25 min dopo la fine; dopo una riaccensione con l'auto collegata
+  la carica riparte entro 10 s.
+- Timestamp dal Raspberry, non dall'orologio dello Shelly. Lo Schedule delle 01:00
+  invece usa l'orologio dello Shelly, che deve essere sincronizzato.
 - kWh solo da aenergy.total differenziato. Il codice deve riconoscere il riavvio
   (uptime che cala) e l'azzeramento del contatore (totale che cala).
-- NON accertato: se aenergy.total sopravvive a un'interruzione di corrente.
+- aenergy.total sopravvive a un'interruzione di corrente ma perde la frazione non
+  ancora salvata (11/10/2026 alle 13:15: da 1301,66 a 1301,0 Wh).

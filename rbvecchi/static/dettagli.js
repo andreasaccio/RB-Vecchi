@@ -153,13 +153,13 @@ function renderRicarica(carica) {
     : `${carica.reset_reason}${RESET_REASON[carica.reset_reason] ? ` (${RESET_REASON[carica.reset_reason]})` : ""}`;
   renderSection("Ricarica", {
     age: carica.eta_s,
-    note: carica.avviso ? `Attenzione: ${carica.avviso}.` : "",
+    note: carica.avviso ? `Attenzione: ${carica.avviso}.` : (carica.nota ? `${carica.nota}.` : ""),
     noteIsAlarm: Boolean(carica.avviso),
     rows: [
       ["Potenza", num(carica.potenza_W, 1, "W")],
       ["Tensione", num(carica.tensione_V, 1, "V")],
       ["Corrente", num(carica.corrente_A, 3, "A")],
-      ["Relè della presa", yesNo(carica.rele_chiuso, "chiuso (presa alimentata)", "APERTO"), carica.rele_chiuso === false],
+      ["Relè della presa", yesNo(carica.rele_chiuso, "chiuso (presa alimentata)", "aperto (spento dal programma)")],
       ["Temperatura", num(carica.temperatura_C, 1, "°C")],
       ["Uptime", formatDuration(carica.uptime_s)],
       ["Causa dell'ultimo avvio (reset_reason)", resetLabel],

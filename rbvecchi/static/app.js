@@ -190,7 +190,8 @@ function updateCarica(carica) {
   }
   const watts = Math.round(carica.potenza_W);
   elements.caricaPower.textContent = new Intl.NumberFormat("it-IT").format(watts);
-  elements.caricaNote.textContent = watts === 0 ? "Nessun assorbimento" : "Potenza assorbita dal caricabatterie";
+  elements.caricaNote.textContent = carica.nota
+    || (watts === 0 ? "Nessun assorbimento" : "Potenza assorbita dal caricabatterie");
   elements.caricaWarning.textContent = carica.avviso || "";
   elements.caricaWarning.classList.toggle("hidden", !carica.avviso);
 }
