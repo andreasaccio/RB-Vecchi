@@ -1,92 +1,74 @@
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RB-Vecchi">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
-  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  <title>Dettagli impianto · {{ app_name }}</title>
-</head>
-<body>
-  <div class="page-shell">
-    <header class="topbar">
-      <div>
-        <a class="page-back" href="/">‹ Pagina principale</a>
-        <h1>Dettagli impianto</h1>
-      </div>
-      <div class="top-actions">
-        <button id="refreshButton" class="secondary-button" type="button">Aggiorna</button>
-        <form method="post" action="/logout">
-          <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
-          </button>
-        </form>
-      </div>
-    </header>
+{% extends "base.html" %}
+{% set active = "impianto" %}
+{% block title %}Impianto · {{ app_name }}{% endblock %}
+{% block heading %}Impianto{% endblock %}
+{% block sub %}<p class="page-sub">Dispositivi, rete, server e notifiche</p>{% endblock %}
+{% block actions %}
+<button id="refreshButton" class="btn-icon" type="button" aria-label="Aggiorna" title="Aggiorna"><svg class="icon"><use href="#i-refresh"/></svg></button>
+{% endblock %}
 
-    <main>
-      <section id="sezBasculante" class="details-card"
-               data-indirizzo="{{ shelly_address }}" data-avviso="{{ alert_minutes }}">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Garage · Shelly 1 Gen3</p>
-            <h3>Shelly basculante</h3>
-          </div>
-          <span id="etaBasculante" class="section-age">—</span>
-        </div>
-        <p id="ndBasculante" class="section-nd hidden"></p>
-        <dl id="dlBasculante" class="details-list"></dl>
-      </section>
-
-      <section id="sezRicarica" class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Garage · Shelly 1PM Gen3</p>
-            <h3>Shelly ricarica</h3>
-          </div>
-          <span id="etaRicarica" class="section-age">—</span>
-        </div>
-        <p id="ndRicarica" class="section-nd hidden"></p>
-        <dl id="dlRicarica" class="details-list"></dl>
-      </section>
-
-      <section id="sezPowerline" class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Rete · TP-Link, garage TL-WPA4220</p>
-            <h3>Powerline</h3>
-          </div>
-          <span id="etaPowerline" class="section-age">—</span>
-        </div>
-        <p id="ndPowerline" class="section-nd hidden"></p>
-        <dl id="dlPowerline" class="details-list"></dl>
-        <div id="plcAdattatori"></div>
-      </section>
-
-      <section id="sezRaspberry" class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Casa · server</p>
-            <h3>Raspberry</h3>
-          </div>
-          <span id="etaRaspberry" class="section-age">—</span>
-        </div>
-        <p id="ndRaspberry" class="section-nd hidden"></p>
-        <dl id="dlRaspberry" class="details-list"></dl>
-      </section>
-    </main>
-
-    <footer>
-      <span>RB-Vecchi</span>
-      <span id="footerClock">—</span>
-    </footer>
+{% macro testa(icona, eyebrow, titolo, chiave="", chip="", tono="") %}
+<div class="card-head">
+  <div class="head-icon">
+    <span class="row-icon"><svg class="icon"><use href="#i-{{ icona }}"/></svg></span>
+    <div>
+      <p class="eyebrow">{{ eyebrow }}</p>
+      <h2>{{ titolo }}</h2>
+    </div>
   </div>
-  <script src="{{ url_for('static', filename='dettagli.js') }}" defer></script>
-</body>
-</html>
+  {% if chiave %}<span id="eta{{ chiave }}" class="meta">—</span>{% endif %}
+  {% if chip %}<span class="chip {{ tono }}">{{ chip }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="cols">
+  <div class="stack">
+    <section id="sezBasculante" class="card o-1"
+             data-indirizzo="{{ shelly_address }}" data-avviso="{{ alert_minutes }}">
+      {{ testa("garage", "Garage · Shelly 1 Gen3", "Shelly basculante", "Basculante") }}
+      <p id="ndBasculante" class="notice hidden"></p>
+      <dl id="dlBasculante" class="kv"></dl>
+    </section>
+
+    <section id="sezPowerline" class="card o-3">
+      {{ testa("network", "Rete · TP-Link TL-WPA4220", "Powerline", "Powerline") }}
+      <p id="ndPowerline" class="notice hidden"></p>
+      <dl id="dlPowerline" class="kv"></dl>
+      <div id="plcAdattatori"></div>
+    </section>
+
+    <section id="sezNotifiche" class="card o-5">
+      {% if telegram_enabled %}
+      {{ testa("send", "Notifiche", "Telegram", chip="Attivo", tono="ok") }}
+      <p id="telegramTestResult" class="note">Invia un messaggio di prova con data, ora e stato del basculante.</p>
+      {% else %}
+      {{ testa("send", "Notifiche", "Telegram", chip="Non configurato", tono="warn") }}
+      <p id="telegramTestResult" class="notice warn">Telegram non configurato: impostare bot e chat in /etc/rb-vecchi.env e riavviare il servizio.</p>
+      {% endif %}
+      <div class="card-foot end">
+        <button id="telegramTestButton" class="btn btn-secondary" type="button"{% if not telegram_enabled %} disabled{% endif %}>
+          <svg class="icon"><use href="#i-send"/></svg>
+          <span>Invia prova</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section id="sezRicarica" class="card o-2">
+      {{ testa("plug", "Garage · Shelly 1PM Gen3", "Shelly ricarica", "Ricarica") }}
+      <p id="ndRicarica" class="notice hidden"></p>
+      <dl id="dlRicarica" class="kv"></dl>
+    </section>
+
+    <section id="sezRaspberry" class="card o-4">
+      {{ testa("chip", "Casa · server", "Raspberry", "Raspberry") }}
+      <p id="ndRaspberry" class="notice hidden"></p>
+      <dl id="dlRaspberry" class="kv"></dl>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='dettagli.js', v=asset_v) }}" defer></script>{% endblock %}

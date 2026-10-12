@@ -1,182 +1,121 @@
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RB-Vecchi">
-  <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
-  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  <title>{{ app_name }}</title>
-</head>
-<body>
-  <div class="page-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Casa</p>
-        <h1>{{ app_name }}</h1>
-      </div>
-      <div class="top-actions">
-        <span id="connectionPill" class="pill pill-muted">Connessione…</span>
-        <a class="icon-button" href="/dettagli" aria-label="Dettagli impianto" title="Dettagli impianto">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"/></svg>
-        </a>
-        <form method="post" action="/logout">
-          <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
-          </button>
-        </form>
-      </div>
-    </header>
+{% extends "base.html" %}
+{% set active = "garage" %}
+{% block heading %}{{ app_name }}{% endblock %}
+{% block sub %}<p id="headerClock" class="page-sub">&nbsp;</p>{% endblock %}
 
-    <main>
-      <section id="garageCard" class="garage-card state-unknown" aria-live="polite">
-        <div class="garage-visual" aria-hidden="true">
-          <svg class="garage-icon" viewBox="0 0 160 120">
-            <path class="garage-house" d="M12 55 80 12l68 43v53H12z"/>
-            <path class="garage-frame" d="M33 55h94v53H33z"/>
-            <path class="garage-door" d="M39 62h82v40H39z"/>
-            <path class="garage-lines" d="M39 72h82M39 82h82M39 92h82"/>
-            <circle class="garage-handle" cx="80" cy="95" r="3"/>
-          </svg>
-        </div>
-        <div class="garage-copy">
-          <p class="section-label">Basculante garage</p>
-          <div class="status-row">
-            <span id="statusDot" class="status-dot"></span>
+{% block content %}
+<div class="cols cols-home">
+  <div class="stack">
+    <section id="garageCard" class="card o-1 state-unknown" aria-live="polite">
+      <div class="card-head">
+        <p class="eyebrow">Basculante garage</p>
+        <span id="connectionPill" class="chip">Connessione…</span>
+      </div>
+      <div class="garage">
+        <svg class="garage-icon" viewBox="0 0 160 120" aria-hidden="true">
+          <path class="garage-house" d="M12 55 80 12l68 43v53H12z"/>
+          <path class="garage-frame" d="M33 55h94v53H33z"/>
+          <path class="garage-door" d="M39 62h82v40H39z"/>
+          <path class="garage-lines" d="M39 72h82M39 82h82M39 92h82"/>
+          <circle class="garage-handle" cx="80" cy="95" r="3"/>
+        </svg>
+        <div>
+          <div class="status-line">
+            <span class="dot"></span>
             <h2 id="garageState">Stato non disponibile</h2>
           </div>
-          <p id="stateSince" class="state-since">In attesa della prima lettura…</p>
-          <p id="staleWarning" class="stale-warning hidden"></p>
+          <p id="stateSince" class="garage-since">In attesa della prima lettura…</p>
         </div>
-      </section>
-
-      <section class="command-card">
-        <button id="pulseButton" class="primary-button" type="button" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v2h10V4h2v16h-2v-2H7v2H5V4h2zm0 4v8h10V8H7zm2 2h6v2H9v-2z"/></svg>
+      </div>
+      <p id="staleWarning" class="notice warn mt hidden"></p>
+      <div class="stats mt">
+        <div class="stat">
+          <span class="stat-label">Aperture oggi</span>
+          <strong id="openingsToday" class="stat-value num">—</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Aperto oggi</span>
+          <strong id="openTimeToday" class="stat-value num">—</strong>
+        </div>
+      </div>
+      <div class="garage-cmd">
+        <button id="pulseButton" class="btn btn-primary btn-block" type="button" disabled>
+          <svg class="icon"><use href="#i-garage"/></svg>
           <span>Comanda basculante</span>
         </button>
-        <p>Invia un impulso passo-passo di sicurezza al relè Shelly.</p>
-      </section>
+        <p>Impulso passo-passo al relè Shelly, dopo una conferma.</p>
+      </div>
+    </section>
 
-      <section class="metrics-grid" aria-label="Metriche garage">
-        <article class="metric-card">
-          <span class="metric-label">Aperture oggi</span>
-          <strong id="openingsToday">—</strong>
-        </article>
-        <article class="metric-card">
-          <span class="metric-label">Aperto oggi</span>
-          <strong id="openTimeToday">—</strong>
-        </article>
-      </section>
-
-      <section id="caricaCard" class="carica-card carica-non_disponibile" aria-live="polite">
-        <div class="powerline-head">
-          <p class="section-label">Ricarica quadriciclo</p>
-          <span id="caricaAge" class="powerline-age"></span>
+    <section class="card o-4" aria-labelledby="titoloEventi">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Registro eventi</p>
+          <h2 id="titoloEventi">Aperture e chiusure</h2>
         </div>
-        <p class="carica-power"><strong id="caricaPower">—</strong> <span>W</span></p>
-        <p id="caricaNote" class="powerline-reason">In attesa dei dati della ricarica…</p>
-        <p id="caricaWarning" class="carica-warning hidden"></p>
-        <div class="carica-azioni">
-          <p id="caricaUltima" class="carica-ultima">Registro della ricarica in caricamento…</p>
-          <button id="caricaOraButton" class="secondary-button" type="button">Carica ora</button>
-        </div>
-        <a class="carica-link" href="/ricarica">Consumi, grafici e bollette ›</a>
-      </section>
-
-      <section id="powerlineCard" class="powerline-card pl-non_disponibile" aria-live="polite">
-        <div class="powerline-head">
-          <p class="section-label">Powerline casa – garage</p>
-          <span id="powerlineAge" class="powerline-age"></span>
-        </div>
-        <div class="status-row">
-          <span class="status-dot"></span>
-          <h2 id="powerlineState">Non disponibile</h2>
-        </div>
-        <p id="powerlineReason" class="powerline-reason">In attesa del riepilogo della raccolta dati…</p>
-        <dl class="powerline-facts">
-          <div><dt>Disponibilità 24 h</dt><dd id="powerlineAvailability">—</dd></div>
-          <div><dt>Ultimo episodio</dt><dd id="powerlineLastEpisode">—</dd></div>
-        </dl>
-      </section>
-
-      <a class="details-link" href="/dettagli">
-        <span>
-          <strong>Dettagli impianto</strong>
-          <small>Shelly basculante e ricarica, powerline, Raspberry</small>
-        </span>
-        <span class="details-link-arrow" aria-hidden="true">›</span>
-      </a>
-
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Notifiche</p>
-            <h3>Test Telegram</h3>
-          </div>
-          <button id="telegramTestButton" class="secondary-button" type="button"{% if not telegram_enabled %} disabled{% endif %}>Invia test</button>
-        </div>
-        {% if telegram_enabled %}
-        <p id="telegramTestResult" class="telegram-test-result">Invia un messaggio di prova con data, ora e stato del basculante.</p>
-        {% else %}
-        <p id="telegramTestResult" class="telegram-test-result">Telegram non configurato: impostare TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID in /etc/rb-vecchi.env e riavviare il servizio.</p>
-        {% endif %}
-      </section>
-
-      <section class="history-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Registro eventi</p>
-            <h3>Aperture e chiusure</h3>
-          </div>
-          <span class="history-badge">ultimi 50</span>
-        </div>
-        <div id="eventList" class="event-list">
-          <p class="empty-state">Caricamento storico…</p>
-        </div>
-      </section>
-
-      <section class="history-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Registro ricarica</p>
-            <h3>Accensioni della presa</h3>
-          </div>
-          <span class="history-badge">ultimi 7 giorni</span>
-        </div>
-        <div id="caricaRegistro" class="event-list">
-          <p class="empty-state">Caricamento registro…</p>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <span>RB-Vecchi</span>
-      <span id="footerClock">—</span>
-    </footer>
+        <span id="eventCount" class="meta"></span>
+      </div>
+      <div id="eventList" class="rows">
+        <p class="empty">Caricamento storico…</p>
+      </div>
+      <button id="eventMore" class="link-more rows-more hidden" type="button"></button>
+    </section>
   </div>
 
-  <dialog id="commandDialog" class="command-dialog">
-    <form method="dialog">
-      <div class="dialog-icon">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 1 21h22L12 2zm0 5 6.9 12H5.1L12 7zm-1 3v5h2v-5h-2zm0 7v2h2v-2h-2z"/></svg>
+  <div class="stack">
+    <section id="caricaCard" class="card o-2 carica-non_disponibile" aria-live="polite">
+      <div class="card-head">
+        <p class="eyebrow">Ricarica quadriciclo</p>
+        <span id="caricaAge" class="meta"></span>
       </div>
-      <h3>Inviare il comando?</h3>
-      <p id="dialogText">Il basculante riceverà un impulso passo-passo.</p>
-      <div class="dialog-actions">
-        <button class="secondary-button" value="cancel">Annulla</button>
-        <button id="confirmPulseButton" class="danger-button" value="default">Invia impulso</button>
+      <div class="power-line">
+        <p class="power"><strong id="caricaPower">—</strong><span>W</span></p>
+        <span id="caricaChip" class="chip">Non disponibile</span>
       </div>
-    </form>
-  </dialog>
+      <p id="caricaNote" class="note mt-s">In attesa dei dati della ricarica…</p>
+      <p id="caricaWarning" class="notice warn mt-s hidden"></p>
+      <p id="caricaUltima" class="note mt-s">Registro della ricarica in caricamento…</p>
+      <div class="card-foot">
+        <a class="link-more" href="/ricarica">Consumi e bollette<svg class="icon"><use href="#i-chevron"/></svg></a>
+        <button id="caricaOraButton" class="btn btn-secondary" type="button">
+          <svg class="icon"><use href="#i-bolt"/></svg>
+          <span>Carica ora</span>
+        </button>
+      </div>
+    </section>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
-</body>
-</html>
+    <section id="powerlineCard" class="card o-3 pl-non_disponibile" aria-live="polite">
+      <div class="card-head">
+        <p class="eyebrow">Powerline casa – garage</p>
+        <span id="powerlineAge" class="meta"></span>
+      </div>
+      <div class="status-line">
+        <span class="dot"></span>
+        <h2 id="powerlineState">Non disponibile</h2>
+      </div>
+      <p id="powerlineReason" class="note mt-s">In attesa del riepilogo della raccolta dati…</p>
+      <dl class="kv mt">
+        <div><dt>Disponibilità 24 h</dt><dd id="powerlineAvailability">—</dd></div>
+        <div><dt>Ultimo episodio</dt><dd id="powerlineLastEpisode">—</dd></div>
+      </dl>
+      <div class="card-foot">
+        <a class="link-more" href="/dettagli">Dettagli impianto<svg class="icon"><use href="#i-chevron"/></svg></a>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="commandDialog" class="dialog">
+  <form method="dialog">
+    <div class="dialog-icon"><svg class="icon"><use href="#i-alert"/></svg></div>
+    <h3>Inviare il comando?</h3>
+    <p id="dialogText">Il basculante riceverà un impulso passo-passo.</p>
+    <div class="dialog-actions">
+      <button class="btn btn-secondary" value="cancel">Annulla</button>
+      <button id="confirmPulseButton" class="btn btn-danger" value="default">Invia impulso</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='app.js', v=asset_v) }}" defer></script>{% endblock %}

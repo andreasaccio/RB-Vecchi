@@ -122,15 +122,28 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   /api/status, sul monitor o sulle notifiche del basculante. File assente, illeggibile, non
   valido o vecchio (carica-ultimo.json 60 s, gli altri 5 minuti) =
   "non disponibile".
-- Pagine: principale (basculante, powerline, comando, ricarica con "Carica ora",
-  statistiche, registro eventi, registro ricarica), /ricarica (consumi, grafici,
-  registro dettagliato, prezzo, bollette) e
-  /dettagli (Shelly basculante, Shelly ricarica, powerline, Raspberry), con la
-  stessa autenticazione. Nessun segreto nelle pagine.
+- Pagine, tutte da templates/base.html (sprite delle icone SVG, navigazione
+  Garage / Ricarica / Impianto: barra in basso sul telefono, colonna a sinistra
+  da 900 px; uscita in alto a destra), con la stessa autenticazione:
+  principale "/" essenziale (basculante con comando e statistiche di oggi,
+  ricarica compatta con "Carica ora", powerline compatta, ultimi eventi);
+  /ricarica (presa adesso con "Carica ora", consumi, grafici, registro con i
+  comandi "Carica ora", bollette, prezzo); /dettagli = "Impianto" (Shelly
+  basculante, Shelly ricarica, powerline, Raspberry, test Telegram). Nessun
+  segreto nelle pagine.
+- Aspetto: un solo static/app.css a token (chiaro in :root, scuro con
+  prefers-color-scheme), componenti card, chip, notice, btn, kv, rows, stats.
+  Nessuno stile o script in linea (CSP); niente emoji o simboli Unicode come
+  icone, solo lo sprite. static/common.js (apiFetch, showToast, icone, "Carica
+  ora") va caricato prima dello script della pagina: sono script classici con
+  nomi globali, le pagine non li ridichiarano.
 - Il Wi-Fi dello Shelly misura solo il salto Shelly-AP, non la salute della
   catena: l'indicatore di rete della dashboard è il riquadro Powerline.
-- Modifiche a static/: cambiare CACHE_NAME in service-worker.js, altrimenti il
-  telefono continua a usare i file vecchi dalla cache.
+- CSS e JS si includono con url_for('static', ..., v=asset_v): asset_v è
+  l'impronta dei file di static/ (impronta_static in web.py), quindi dopo un
+  aggiornamento l'URL cambia e il telefono scarica i file nuovi da solo.
+  CACHE_NAME in service-worker.js va cambiato solo se cambiano icone o manifest
+  (senza versione nell'URL) o il service worker stesso.
 
 ## Shelly ricarica quadriciclo (192.168.1.101)
 - Shelly 1PM Gen3 (S3SW-001P16EU), firmware 2.0.1. Il caricabatterie della Tazzari

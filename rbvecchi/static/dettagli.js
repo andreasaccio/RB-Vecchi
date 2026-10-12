@@ -1,7 +1,9 @@
 "use strict";
 
-// Pagina "Dettagli impianto": quattro sezioni indipendenti, ciascuna con la
-// propria età dei dati e il proprio "non disponibile". Solo lettura.
+// Pagina "Impianto": quattro sezioni indipendenti, ciascuna con la propria età
+// dei dati e il proprio "non disponibile", più il test delle notifiche Telegram
+// (l'unica azione della pagina). apiFetch, showToast e csrfToken vengono da
+// common.js.
 
 const PASSO_MS = 10000;
 const RESET_REASON = { 1: "accensione", 3: "riavvio software" };
@@ -47,7 +49,7 @@ function gigabytes(bytes) {
 function usage(pair, usedKey, totalKey) {
   if (!pair || pair[usedKey] === null || pair[totalKey] === null || !pair[totalKey]) return "n/d";
   const percent = Math.round((100 * pair[usedKey]) / pair[totalKey]);
-  return `${gigabytes(pair[usedKey])} di ${gigabytes(pair[totalKey])} (${percent} %)`;
+  return `${percent}\u00a0% · ${num(pair[usedKey] / 1e9, 1)} / ${gigabytes(pair[totalKey])}`;
 }
 
 function wifiLabel(rssi) {
@@ -64,23 +66,6 @@ function yesNo(value, yes, no) {
   return value ? yes : no;
 }
 
-async function apiFetch(url) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "same-origin",
-    headers: { "Accept": "application/json" },
-  });
-  if (response.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Sessione scaduta");
-  }
-  const payload = await response.json().catch(() => ({ ok: false, error: "Risposta non valida" }));
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `Errore HTTP ${response.status}`);
-  }
-  return payload;
-}
-
 // rows: [etichetta, valore, allarme?]; il valore va sempre in textContent.
 function fillList(list, rows) {
   list.replaceChildren(...rows.map(([label, value, alarm]) => {
@@ -89,7 +74,7 @@ function fillList(list, rows) {
     const dd = document.createElement("dd");
     dt.textContent = label;
     dd.textContent = value;
-    if (alarm) dd.classList.add("value-alarm");
+    if (alarm) dd.classList.add("alarm");
     row.append(dt, dd);
     return row;
   }));
@@ -101,7 +86,7 @@ function renderSection(key, { age, note, noteIsAlarm = false, rows = [] }) {
   const noteBox = document.getElementById(`nd${key}`);
   noteBox.textContent = note || "";
   noteBox.classList.toggle("hidden", !note);
-  noteBox.classList.toggle("section-nd-alarm", Boolean(note) && noteIsAlarm);
+  noteBox.classList.toggle("err", Boolean(note) && noteIsAlarm);
   fillList(document.getElementById(`dl${key}`), rows);
 }
 
@@ -129,9 +114,9 @@ function renderBasculante(status) {
       ["Indirizzo", section.dataset.indirizzo || "n/d"],
       ["Relè", yesNo(status.relay_output, "Attivo", "A riposo")],
       ["Input mode", status.switch_in_mode || "non verificato", status.switch_in_mode !== "detached"],
-      ["Stato grezzo dell'ingresso", inputState],
+      ["Ingresso (stato grezzo)", inputState],
       ["Temperatura", num(status.temperature_c, 1, "°C")],
-      ["Wi-Fi Shelly (solo salto Shelly-AP)", wifiLabel(status.wifi_rssi)],
+      ["Wi-Fi (Shelly–AP)", wifiLabel(status.wifi_rssi)],
       ["Firmware", status.firmware || "n/d"],
       ["Uptime", formatDuration(status.uptime_seconds)],
       ["Ultimo aggiornamento", formatDateTime(status.last_success)],
@@ -159,10 +144,10 @@ function renderRicarica(carica) {
       ["Potenza", num(carica.potenza_W, 1, "W")],
       ["Tensione", num(carica.tensione_V, 1, "V")],
       ["Corrente", num(carica.corrente_A, 3, "A")],
-      ["Relè della presa", yesNo(carica.rele_chiuso, "chiuso (presa alimentata)", "aperto (spento dal programma)")],
+      ["Relè della presa", yesNo(carica.rele_chiuso, "chiuso, presa accesa", "aperto, presa spenta")],
       ["Temperatura", num(carica.temperatura_C, 1, "°C")],
       ["Uptime", formatDuration(carica.uptime_s)],
-      ["Causa dell'ultimo avvio (reset_reason)", resetLabel],
+      ["Causa ultimo avvio", resetLabel],
       ["Wi-Fi", wifiLabel(carica.rssi)],
       ["AP (BSSID)", carica.bssid || "n/d"],
       ["Modello", carica.modello || "n/d"],
@@ -175,16 +160,18 @@ function renderRicarica(carica) {
 
 function renderAdattatori(plc) {
   const box = document.getElementById("plcAdattatori");
-  const names = { casa: "PLC casa", garage: "PLC garage" };
+  // D-Link letti dal raccoglitore rb-plc, dismesso: compaiono finché i dati
+  // storici rientrano nelle 24 h.
+  const names = { casa: "ex D-Link casa", garage: "ex D-Link garage" };
   box.replaceChildren(...["casa", "garage"].filter((name) => plc && plc[name]).map((name) => {
     const a = plc[name];
     const s = a.ultimo_campione;
     const wrap = document.createElement("div");
-    wrap.className = "plc-adapter";
-    const title = document.createElement("h4");
+    const title = document.createElement("p");
+    title.className = "kv-sub";
     title.textContent = `${names[name]}${a.ip ? ` (${a.ip})` : ""}`;
     const list = document.createElement("dl");
-    list.className = "details-list";
+    list.className = "kv";
     const lastRead = a.ultima_lettura
       ? `${formatDateTime(a.ultima_lettura.ts)}, ${a.ultima_lettura.stato === "ok" ? "ok" : "non risponde"}`
       : "n/d";
@@ -220,14 +207,14 @@ function renderPowerline(p) {
     rows: [
       ["Stato", POWERLINE_LABELS[p.stato] || "Non disponibile", p.stato === "interrotta" || p.stato === "instabile"],
       ["Motivo", p.motivo || "—"],
-      ["Disponibilità del .67 nelle 24 h", num(g.disponibilita_24h, 2, "%")],
-      ["Episodi KO del .67 nelle 24 h", num(g.episodi_24h)],
-      ["Perdite isolate del .67 nelle 24 h", num(g.perdite_isolate_24h)],
+      ["Disponibilità PLC garage (24 h)", num(g.disponibilita_24h, 2, "%")],
+      ["Episodi KO (24 h)", num(g.episodi_24h)],
+      ["Perdite isolate (24 h)", num(g.perdite_isolate_24h)],
       ["Ultimo episodio", lastText],
-      ["Pacchetti PLC scartati nelle 24 h", num(p.scartati_plc_24h), Boolean(p.scartati_plc_24h)],
-      ["Riavvii degli adattatori nelle 24 h", num(p.riavvii_24h), Boolean(p.riavvii_24h)],
+      ["Pacchetti scartati, ex D-Link (24 h)", num(p.scartati_plc_24h), Boolean(p.scartati_plc_24h)],
+      ["Riavvii adattatori, ex D-Link (24 h)", num(p.riavvii_24h), Boolean(p.riavvii_24h)],
       ["Ultimo giro di ping", formatDateTime(p.ultimo_giro)],
-      ["Tempo di calcolo del riepilogo", num(p.calcolo_ms, 0, "ms")],
+      ["Calcolo del riepilogo", num(p.calcolo_ms, 0, "ms")],
     ],
   });
   renderAdattatori(p.plc);
@@ -247,7 +234,7 @@ function renderRaspberry(s) {
     ["Carico 1 / 5 / 15 min", load],
     ["Temperatura CPU", num(s.temperatura_cpu_C, 1, "°C"), s.temperatura_cpu_C >= 75],
     ["RAM usata", usage(s.memoria, "usata_B", "totale_B")],
-    ["Disco / usato", usage(s.disco_radice, "usato_B", "totale_B")],
+    ["Disco /", usage(s.disco_radice, "usato_B", "totale_B")],
     ["Uptime", formatDuration(s.uptime_s)],
     ["Kernel", s.kernel || "n/d"],
     ["Riavvio richiesto", yesNo(s.riavvio_richiesto, "sì", "no"), s.riavvio_richiesto === true],
@@ -275,14 +262,41 @@ function loadAll() {
   loadSection("/api/sistema", "Raspberry", renderRaspberry, (p) => p.sistema);
 }
 
-function updateClock() {
-  document.getElementById("footerClock").textContent = new Intl.DateTimeFormat("it-IT", {
-    weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-  }).format(new Date());
+// ---------------------------------------------------------------- notifiche
+
+const TELEGRAM_ATTESA_MS = 30000;
+const telegramButton = document.getElementById("telegramTestButton");
+const telegramResult = document.getElementById("telegramTestResult");
+
+function esitoTelegram(message, isError) {
+  telegramResult.textContent = message;
+  telegramResult.className = isError ? "notice err" : "notice";
 }
 
+async function sendTelegramTest() {
+  telegramButton.disabled = true;
+  telegramResult.className = "note";
+  telegramResult.textContent = "Invio in corso…";
+  let riabilitaDopo = TELEGRAM_ATTESA_MS;
+  try {
+    const payload = await apiFetch("/api/telegram/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    });
+    const message = payload.message || "Messaggio di prova inviato";
+    esitoTelegram(`${message} (${formatDateTime(Date.now() / 1000)})`, false);
+    showToast(message);
+  } catch (error) {
+    const message = error.message || "Test Telegram non riuscito";
+    esitoTelegram(message, true);
+    showToast(message, true);
+    riabilitaDopo = 2500;
+  } finally {
+    setTimeout(() => { telegramButton.disabled = false; }, riabilitaDopo);
+  }
+}
+
+telegramButton?.addEventListener("click", sendTelegramTest);
 document.getElementById("refreshButton").addEventListener("click", loadAll);
 loadAll();
-updateClock();
 setInterval(loadAll, PASSO_MS);
-setInterval(updateClock, 1000);

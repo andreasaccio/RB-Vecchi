@@ -1,6 +1,8 @@
 "use strict";
 
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+// Pagina principale. apiFetch, showToast, svgIcon, rigaElenco, statoPresa,
+// caricaOra e csrfToken vengono da common.js.
+
 const elements = {
   garageCard: document.getElementById("garageCard"),
   garageState: document.getElementById("garageState"),
@@ -24,19 +26,20 @@ const elements = {
   caricaPower: document.getElementById("caricaPower"),
   caricaNote: document.getElementById("caricaNote"),
   caricaWarning: document.getElementById("caricaWarning"),
+  caricaChip: document.getElementById("caricaChip"),
   caricaUltima: document.getElementById("caricaUltima"),
   caricaOraButton: document.getElementById("caricaOraButton"),
-  caricaRegistro: document.getElementById("caricaRegistro"),
   eventList: document.getElementById("eventList"),
-  telegramTestButton: document.getElementById("telegramTestButton"),
-  telegramTestResult: document.getElementById("telegramTestResult"),
-  footerClock: document.getElementById("footerClock"),
-  toast: document.getElementById("toast"),
+  eventCount: document.getElementById("eventCount"),
+  eventMore: document.getElementById("eventMore"),
+  headerClock: document.getElementById("headerClock"),
 };
 
+const EVENTI_BREVE = 8;
 let latestStatus = null;
-let toastTimer = null;
 let requestRunning = false;
+let ultimiEventi = [];
+let eventiCompleti = false;
 
 function formatDuration(totalSeconds, compact = false) {
   if (totalSeconds === null || totalSeconds === undefined || Number.isNaN(totalSeconds)) return "—";
@@ -49,18 +52,6 @@ function formatDuration(totalSeconds, compact = false) {
   if (hours) return compact ? `${hours}h ${minutes}m` : `${hours} ore e ${minutes} min`;
   if (minutes) return compact ? `${minutes}m ${secs}s` : `${minutes} min e ${secs} s`;
   return `${secs} s`;
-}
-
-function formatDateTime(epochSeconds) {
-  if (!epochSeconds) return "—";
-  return new Intl.DateTimeFormat("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(epochSeconds * 1000));
 }
 
 function formatEventDate(epochSeconds) {
@@ -84,7 +75,7 @@ function updateStatus(status) {
     elements.garageState.textContent = "Shelly non raggiungibile";
     elements.stateSince.textContent = status.last_error || "Connessione non disponibile";
     elements.connectionPill.textContent = "Offline";
-    elements.connectionPill.className = "pill pill-offline";
+    elements.connectionPill.className = "chip err";
     elements.pulseButton.disabled = true;
     elements.staleWarning.classList.remove("hidden");
     elements.staleWarning.textContent = status.last_success
@@ -95,7 +86,7 @@ function updateStatus(status) {
     elements.garageState.textContent = "Aperto";
     elements.stateSince.textContent = `Da ${formatDuration(status.state_duration_seconds)}`;
     elements.connectionPill.textContent = "Online";
-    elements.connectionPill.className = "pill pill-online";
+    elements.connectionPill.className = "chip ok";
     elements.pulseButton.disabled = !status.command_allowed;
     elements.staleWarning.classList.add("hidden");
   } else if (status.garage_open === false) {
@@ -103,7 +94,7 @@ function updateStatus(status) {
     elements.garageState.textContent = "Chiuso";
     elements.stateSince.textContent = `Da ${formatDuration(status.state_duration_seconds)}`;
     elements.connectionPill.textContent = "Online";
-    elements.connectionPill.className = "pill pill-online";
+    elements.connectionPill.className = "chip ok";
     elements.pulseButton.disabled = !status.command_allowed;
     elements.staleWarning.classList.add("hidden");
   } else {
@@ -111,7 +102,7 @@ function updateStatus(status) {
     elements.garageState.textContent = "Stato non disponibile";
     elements.stateSince.textContent = "In attesa della prima lettura…";
     elements.connectionPill.textContent = "Attesa";
-    elements.connectionPill.className = "pill pill-muted";
+    elements.connectionPill.className = "chip";
     elements.pulseButton.disabled = true;
   }
 
@@ -185,6 +176,8 @@ function updateCarica(carica) {
   elements.caricaAge.textContent = carica?.eta_s === null || carica?.eta_s === undefined
     ? ""
     : `agg. ${formatDuration(carica.eta_s, true)} fa`;
+  const presa = statoPresa(carica);
+  impostaChip(elements.caricaChip, presa.testo, presa.tono);
   if (!available) {
     elements.caricaPower.textContent = "—";
     elements.caricaNote.textContent = `Non disponibile: ${carica?.motivo || "dati della ricarica assenti"}.`;
@@ -228,12 +221,6 @@ function formatWh(value) {
   return `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: value < 100 ? 1 : 0 }).format(value)} Wh`;
 }
 
-function sessionTitle(s) {
-  if (s.esito === "in_corso") return s.in_carica ? "In carica" : "Presa accesa, in attesa";
-  if (s.carica_da && s.energia_Wh !== null) return `Carica · ${formatWh(s.energia_Wh)}`;
-  return s.carica_da ? "Carica" : "Niente da caricare";
-}
-
 function sessionText(s, conEsito = true) {
   const circa = (flag) => (flag ? " circa" : "");
   const parts = [`${formatEventDate(s.inizio)}${circa(s.inizio_approssimato)}`];
@@ -243,34 +230,8 @@ function sessionText(s, conEsito = true) {
   return parts.join(" · ");
 }
 
-function registroItem(icon, typeClass, title, text, right) {
-  const item = document.createElement("article");
-  item.className = `event-item ${typeClass}`;
-  const iconBox = document.createElement("div");
-  iconBox.className = "event-icon";
-  iconBox.textContent = icon;
-  const main = document.createElement("div");
-  main.className = "event-main";
-  const strong = document.createElement("strong");
-  strong.textContent = title;
-  const span = document.createElement("span");
-  span.textContent = text;
-  main.append(strong, span);
-  const side = document.createElement("div");
-  side.className = "event-duration";
-  side.textContent = right;
-  item.append(iconBox, main, side);
-  return item;
-}
-
-function renderRegistroCarica(registro, comandi) {
-  const sessioni = registro?.stato === "ok" ? registro.sessioni : [];
-  const voci = [
-    ...sessioni.map((s) => ({ ts: s.inizio, s })),
-    ...(Array.isArray(comandi) ? comandi : []).map((c) => ({ ts: c.ts, c })),
-  ].sort((a, b) => b.ts - a.ts);
-
-  const ultima = sessioni[0];
+function renderUltimaCarica(registro) {
+  const ultima = registro?.stato === "ok" ? registro.sessioni[0] : null;
   if (registro?.stato !== "ok") {
     elements.caricaUltima.textContent = `Registro non disponibile: ${registro?.motivo || "dati assenti"}.`;
   } else if (!ultima) {
@@ -279,129 +240,47 @@ function renderRegistroCarica(registro, comandi) {
     elements.caricaUltima.textContent = `Ultima: ${sessionText(ultima)}`
       + (ultima.carica_da && ultima.energia_Wh !== null ? ` · ${formatWh(ultima.energia_Wh)}` : "");
   }
-
-  if (voci.length === 0) {
-    const vuoto = document.createElement("p");
-    vuoto.className = "empty-state";
-    vuoto.textContent = registro?.stato === "ok"
-      ? "Nessuna accensione della presa negli ultimi 7 giorni."
-      : `Registro non disponibile: ${registro?.motivo || "dati assenti"}.`;
-    elements.caricaRegistro.replaceChildren(vuoto);
-    return;
-  }
-  elements.caricaRegistro.replaceChildren(...voci.map(({ s, c }) => {
-    if (c) {
-      return registroItem("▸", "event-initial", c.ok ? "Carica ora dall'app" : "Carica ora non riuscita",
-        `${formatEventDate(c.ts)} · ${c.dettaglio || ""}`, "");
-    }
-    const durata = s.fine ? formatDuration(s.fine - s.inizio, true) : "in corso";
-    const typeClass = s.esito === "in_corso" ? "event-open" : s.carica_da ? "event-close" : "event-initial";
-    // "Niente da caricare" è già nel titolo
-    return registroItem(s.carica_da ? "⚡" : "•", typeClass, sessionTitle(s),
-      sessionText(s, s.esito !== "senza_carica"), durata);
-  }));
 }
 
 async function loadRegistroCarica() {
   try {
     const payload = await apiFetch("/api/carica/registro");
-    renderRegistroCarica(payload.registro, payload.comandi);
+    renderUltimaCarica(payload.registro);
   } catch (error) {
-    renderRegistroCarica({ stato: "non_disponibile", motivo: "dati non raggiungibili dalla dashboard" }, []);
+    renderUltimaCarica({ stato: "non_disponibile", motivo: "dati non raggiungibili dalla dashboard" });
   }
 }
 
-const CARICA_ORA_COOLDOWN_MS = 30000;
-
-async function sendCaricaOra() {
-  elements.caricaOraButton.disabled = true;
-  try {
-    const payload = await apiFetch("/api/carica/avvia", {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-    });
-    showToast(payload.message || "Presa accesa");
+function sendCaricaOra() {
+  caricaOra(elements.caricaOraButton, () => {
     setTimeout(loadCarica, 3000);
     setTimeout(loadRegistroCarica, 3000);
     setTimeout(loadRegistroCarica, 70000);
-  } catch (error) {
-    showToast(error.message || "Comando non riuscito", true);
-    loadRegistroCarica();
-  } finally {
-    setTimeout(() => { elements.caricaOraButton.disabled = false; }, CARICA_ORA_COOLDOWN_MS);
-  }
+  });
 }
 
 function renderEvents(events) {
-  if (!Array.isArray(events) || events.length === 0) {
-    elements.eventList.innerHTML = '<p class="empty-state">Nessun evento registrato.</p>';
+  ultimiEventi = Array.isArray(events) ? events : [];
+  elements.eventCount.textContent = ultimiEventi.length ? `ultimi ${ultimiEventi.length}` : "";
+  if (ultimiEventi.length === 0) {
+    elements.eventList.replaceChildren(vuoto("Nessun evento registrato."));
+    elements.eventMore.classList.add("hidden");
     return;
   }
-
-  elements.eventList.replaceChildren(...events.map((event) => {
-    const item = document.createElement("article");
-    let typeClass = "event-initial";
-    let icon = "•";
-    let title = event.garage_open ? "Stato iniziale: aperto" : "Stato iniziale: chiuso";
-    if (event.event_type === "OPEN") {
-      typeClass = "event-open";
-      icon = "↑";
-      title = "Garage aperto";
-    } else if (event.event_type === "CLOSE") {
-      typeClass = "event-close";
-      icon = "↓";
-      title = "Garage chiuso";
-    }
-    item.className = `event-item ${typeClass}`;
-
-    const iconBox = document.createElement("div");
-    iconBox.className = "event-icon";
-    iconBox.textContent = icon;
-
-    const main = document.createElement("div");
-    main.className = "event-main";
-    const strong = document.createElement("strong");
-    strong.textContent = title;
-    const time = document.createElement("span");
-    time.textContent = formatEventDate(event.event_ts);
-    main.append(strong, time);
-
-    const duration = document.createElement("div");
-    duration.className = "event-duration";
-    duration.textContent = event.duration_seconds ? formatDuration(event.duration_seconds, true) : "";
-
-    item.append(iconBox, main, duration);
-    return item;
+  const visibili = eventiCompleti ? ultimiEventi : ultimiEventi.slice(0, EVENTI_BREVE);
+  elements.eventList.replaceChildren(...visibili.map((event) => {
+    let voce = { icona: "dot", tono: "", titolo: event.garage_open ? "Stato iniziale: aperto" : "Stato iniziale: chiuso" };
+    if (event.event_type === "OPEN") voce = { icona: "up", tono: "warn", titolo: "Garage aperto" };
+    else if (event.event_type === "CLOSE") voce = { icona: "down", tono: "ok", titolo: "Garage chiuso" };
+    return rigaElenco({
+      ...voce,
+      sotto: formatEventDate(event.event_ts),
+      destra: event.duration_seconds ? formatDuration(event.duration_seconds, true) : "",
+    });
   }));
-}
-
-function showToast(message, isError = false) {
-  clearTimeout(toastTimer);
-  elements.toast.textContent = message;
-  elements.toast.classList.toggle("error", isError);
-  elements.toast.classList.add("visible");
-  toastTimer = setTimeout(() => elements.toast.classList.remove("visible"), 3200);
-}
-
-async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "same-origin",
-    ...options,
-    headers: {
-      "Accept": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  if (response.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Sessione scaduta");
-  }
-  const payload = await response.json().catch(() => ({ ok: false, error: "Risposta non valida" }));
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `Errore HTTP ${response.status}`);
-  }
-  return payload;
+  const altri = ultimiEventi.length > EVENTI_BREVE;
+  elements.eventMore.classList.toggle("hidden", !altri);
+  elements.eventMore.textContent = eventiCompleti ? "Mostra solo gli ultimi" : `Mostra tutti i ${ultimiEventi.length} eventi`;
 }
 
 async function loadDashboard(showErrors = true) {
@@ -450,37 +329,6 @@ async function sendPulse() {
   }
 }
 
-const TELEGRAM_TEST_COOLDOWN_MS = 30000;
-
-function showTelegramResult(message, isError) {
-  elements.telegramTestResult.textContent = message;
-  elements.telegramTestResult.classList.toggle("success", !isError);
-  elements.telegramTestResult.classList.toggle("error", isError);
-}
-
-async function sendTelegramTest() {
-  elements.telegramTestButton.disabled = true;
-  elements.telegramTestResult.classList.remove("success", "error");
-  elements.telegramTestResult.textContent = "Invio in corso…";
-  let reenableAfter = TELEGRAM_TEST_COOLDOWN_MS;
-  try {
-    const payload = await apiFetch("/api/telegram/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-    });
-    const message = payload.message || "Messaggio di prova inviato";
-    showTelegramResult(`${message} (${formatDateTime(Date.now() / 1000)})`, false);
-    showToast(message);
-  } catch (error) {
-    const message = error.message || "Test Telegram non riuscito";
-    showTelegramResult(message, true);
-    showToast(message, true);
-    reenableAfter = 2500;
-  } finally {
-    setTimeout(() => { elements.telegramTestButton.disabled = false; }, reenableAfter);
-  }
-}
-
 elements.pulseButton?.addEventListener("click", () => {
   const state = latestStatus?.garage_open;
   elements.dialogText.textContent = state === true
@@ -495,13 +343,17 @@ elements.commandDialog?.addEventListener("close", () => {
   if (elements.commandDialog.returnValue === "default") sendPulse();
 });
 
-elements.telegramTestButton?.addEventListener("click", sendTelegramTest);
 elements.caricaOraButton?.addEventListener("click", sendCaricaOra);
+elements.eventMore?.addEventListener("click", () => {
+  eventiCompleti = !eventiCompleti;
+  renderEvents(ultimiEventi);
+});
 
 function updateClock() {
-  elements.footerClock.textContent = new Intl.DateTimeFormat("it-IT", {
-    weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
+  const adesso = new Intl.DateTimeFormat("it-IT", {
+    weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"
   }).format(new Date());
+  if (elements.headerClock.textContent !== adesso) elements.headerClock.textContent = adesso;
   if (latestStatus?.online && latestStatus.state_since) {
     latestStatus.state_duration_seconds = Math.max(0, Math.floor(Date.now() / 1000 - latestStatus.state_since));
     elements.stateSince.textContent = `Da ${formatDuration(latestStatus.state_duration_seconds)}`;
@@ -519,7 +371,3 @@ setInterval(loadCarica, 10000);
 setInterval(loadRegistroCarica, 60000);
 setInterval(() => loadDashboard(false), 15000);
 setInterval(updateClock, 1000);
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js").catch(console.warn));
-}

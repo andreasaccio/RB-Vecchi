@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -9,6 +10,7 @@ import threading
 import time
 from datetime import date, datetime, time as dt_time, timedelta
 from functools import wraps
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from flask import (
@@ -44,6 +46,17 @@ TELEGRAM_ERROR_HINTS = {
 }
 
 
+def impronta_static(cartella: Path) -> str:
+    """Impronta dei file di static/. Le pagine la mettono come ?v= negli URL di
+    CSS e JS: dopo un aggiornamento l'URL cambia e il telefono scarica i file
+    nuovi anche se il service worker ha ancora in cache quelli vecchi."""
+    h = hashlib.sha256()
+    for f in sorted(cartella.iterdir()):
+        if f.is_file():
+            h.update(f.name.encode() + b"\0" + f.read_bytes())
+    return h.hexdigest()[:10]
+
+
 def create_app(settings: Settings | None = None, start_monitor: bool = True) -> Flask:
     settings = settings or load_settings()
     logging.basicConfig(
@@ -59,6 +72,7 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
         PERMANENT_SESSION_LIFETIME=86400 * 30,
         MAX_CONTENT_LENGTH=16 * 1024,
     )
+    app.jinja_env.globals["asset_v"] = impronta_static(Path(app.static_folder))
 
     database = Database(settings.database_path)
     shelly = ShellyClient(
@@ -168,23 +182,19 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
     @app.get("/")
     @login_required
     def index():
+        return render_template("index.html", app_name=settings.app_name, csrf_token=ensure_csrf())
+
+    @app.get("/dettagli")
+    @login_required
+    def dettagli():
+        # Pagina "Impianto": oltre ai dettagli in sola lettura ospita il test Telegram.
         return render_template(
-            "index.html",
+            "dettagli.html",
             app_name=settings.app_name,
             csrf_token=ensure_csrf(),
             alert_minutes=max(1, settings.open_alert_seconds // 60),
             shelly_address=settings.shelly_host.replace("http://", "").replace("https://", ""),
             telegram_enabled=settings.telegram_enabled,
-        )
-
-    @app.get("/dettagli")
-    @login_required
-    def dettagli():
-        return render_template(
-            "dettagli.html",
-            app_name=settings.app_name,
-            alert_minutes=max(1, settings.open_alert_seconds // 60),
-            shelly_address=settings.shelly_host.replace("http://", "").replace("https://", ""),
         )
 
     @app.get("/api/dashboard")

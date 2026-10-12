@@ -1,162 +1,149 @@
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RB-Vecchi">
-  <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
-  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-  <title>Consumi ricarica · {{ app_name }}</title>
-</head>
-<body>
-  <div class="page-shell">
-    <header class="topbar">
+{% extends "base.html" %}
+{% set active = "ricarica" %}
+{% block title %}Consumi ricarica · {{ app_name }}{% endblock %}
+{% block heading %}Ricarica{% endblock %}
+{% block sub %}<p class="page-sub">Consumi, registro e bollette</p>{% endblock %}
+{% block actions %}
+<button id="refreshButton" class="btn-icon" type="button" aria-label="Aggiorna" title="Aggiorna"><svg class="icon"><use href="#i-refresh"/></svg></button>
+{% endblock %}
+
+{% block content %}
+<p id="ndConsumi" class="notice warn hidden"></p>
+
+<div class="cards cards-2">
+  <section id="caricaCard" class="card span-2 carica-non_disponibile" aria-live="polite">
+    <div class="now">
+      <div class="now-main">
+        <p class="power"><strong id="caricaPower">—</strong><span>W</span></p>
+        <span id="caricaChip" class="chip">Non disponibile</span>
+        <span id="caricaAge" class="meta"></span>
+        <p id="caricaNote" class="note">In attesa dei dati della ricarica…</p>
+      </div>
+      <button id="caricaOraButton" class="btn btn-primary" type="button">
+        <svg class="icon"><use href="#i-bolt"/></svg>
+        <span>Carica ora</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="card span-2" aria-labelledby="titoloBimestre">
+    <div class="card-head">
       <div>
-        <a class="page-back" href="/">‹ Pagina principale</a>
-        <h1>Consumi ricarica</h1>
+        <p class="eyebrow">Riepilogo</p>
+        <h2 id="titoloBimestre">Bimestre in corso</h2>
       </div>
-      <div class="top-actions">
-        <button id="refreshButton" class="secondary-button" type="button">Aggiorna</button>
-        <form method="post" action="/logout">
-          <button class="icon-button" type="submit" aria-label="Esci" title="Esci">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9a2 2 0 0 0-2 2v3h2V5h10v14H9v-3H7v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>
-          </button>
-        </form>
+      <span id="etaConsumi" class="meta">—</span>
+    </div>
+    <div class="stats stats-3">
+      <div class="stat">
+        <span class="stat-label">Oggi</span>
+        <strong id="statOggi" class="stat-value num">—</strong>
+        <span id="statOggiEuro" class="stat-sub num">—</span>
       </div>
-    </header>
+      <div class="stat">
+        <span class="stat-label">Questo mese</span>
+        <strong id="statMese" class="stat-value num">—</strong>
+        <span id="statMeseEuro" class="stat-sub num">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Bimestre in corso</span>
+        <strong id="statBimestre" class="stat-value num">—</strong>
+        <span id="statBimestreEuro" class="stat-sub num">—</span>
+      </div>
+    </div>
+    <p id="notaPrezzo" class="note mt">—</p>
+  </section>
 
-    <main>
-      <p id="ndConsumi" class="section-nd hidden"></p>
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Energia della presa</p>
+        <h2>kWh al giorno, ultimi 60 giorni</h2>
+      </div>
+    </div>
+    <div id="graficoGiorni" class="chart" role="img" aria-label="Energia al giorno negli ultimi 60 giorni"></div>
+    <details class="chart-table">
+      <summary>Tabella dei giorni</summary>
+      <div id="tabellaGiorni"></div>
+    </details>
+  </section>
 
-      <section class="details-card" aria-label="Riepilogo dei consumi">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Riepilogo</p>
-            <h3 id="titoloBimestre">Bimestre in corso</h3>
-          </div>
-          <span id="etaConsumi" class="section-age">—</span>
-        </div>
-        <div class="stat-grid">
-          <article class="stat-tile">
-            <span class="metric-label">Oggi</span>
-            <strong id="statOggi">—</strong>
-            <span id="statOggiEuro" class="stat-sub">—</span>
-          </article>
-          <article class="stat-tile">
-            <span class="metric-label">Questo mese</span>
-            <strong id="statMese">—</strong>
-            <span id="statMeseEuro" class="stat-sub">—</span>
-          </article>
-          <article class="stat-tile stat-tile-wide">
-            <span class="metric-label">Bimestre in corso</span>
-            <strong id="statBimestre">—</strong>
-            <span id="statBimestreEuro" class="stat-sub">—</span>
-          </article>
-        </div>
-        <p id="notaPrezzo" class="stat-note">—</p>
-      </section>
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Energia della presa</p>
+        <h2>kWh al mese, ultimi 12 mesi</h2>
+      </div>
+    </div>
+    <div id="graficoMesi" class="chart" role="img" aria-label="Energia al mese negli ultimi 12 mesi"></div>
+    <details class="chart-table">
+      <summary>Tabella dei mesi</summary>
+      <div id="tabellaMesi"></div>
+    </details>
+  </section>
 
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Energia della presa di ricarica</p>
-            <h3>kWh al giorno, ultimi 60 giorni</h3>
-          </div>
-        </div>
-        <div id="graficoGiorni" class="chart" role="img" aria-label="Energia al giorno negli ultimi 60 giorni"></div>
-        <details class="chart-table">
-          <summary>Tabella dei giorni</summary>
-          <div id="tabellaGiorni"></div>
-        </details>
-      </section>
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Ultima carica</p>
+        <h2>Potenza assorbita (W)</h2>
+      </div>
+    </div>
+    <p id="riassuntoProfilo" class="note">—</p>
+    <div id="graficoProfilo" class="chart mt-s" role="img" aria-label="Potenza dell'ultima carica minuto per minuto"></div>
+  </section>
 
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Energia della presa di ricarica</p>
-            <h3>kWh al mese, ultimi 12 mesi</h3>
-          </div>
-        </div>
-        <div id="graficoMesi" class="chart" role="img" aria-label="Energia al mese negli ultimi 12 mesi"></div>
-        <details class="chart-table">
-          <summary>Tabella dei mesi</summary>
-          <div id="tabellaMesi"></div>
-        </details>
-      </section>
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Registro</p>
+        <h2>Accensioni e cariche</h2>
+      </div>
+      <span class="meta">ultimi 2 bimestri</span>
+    </div>
+    <div id="registroDettagliato" class="rows">
+      <p class="empty">Caricamento registro…</p>
+    </div>
+  </section>
 
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Ultima carica</p>
-            <h3>Potenza assorbita (W)</h3>
-          </div>
-        </div>
-        <p id="riassuntoProfilo" class="stat-note">—</p>
-        <div id="graficoProfilo" class="chart" role="img" aria-label="Potenza dell'ultima carica minuto per minuto"></div>
-      </section>
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Bollette bimestrali</p>
+        <h2>Invio su Telegram</h2>
+      </div>
+    </div>
+    <p class="note">Emissione automatica il 1° del bimestre successivo, alle 09:00.</p>
+    <div id="elencoBollette" class="rows mt">
+      <p class="empty">Caricamento bollette…</p>
+    </div>
+  </section>
 
-      <section class="history-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Registro</p>
-            <h3>Accensioni, cariche e spegnimenti</h3>
-          </div>
-          <span class="history-badge">da inizio bimestre precedente</span>
-        </div>
-        <div id="registroDettagliato" class="event-list">
-          <p class="empty-state">Caricamento registro…</p>
-        </div>
-      </section>
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Prezzo dell'energia</p>
+        <h2 id="prezzoAttuale">—</h2>
+      </div>
+    </div>
+    <form id="prezzoForm" class="form-row">
+      <label class="field">
+        <span>€/kWh</span>
+        <input id="prezzoInput" name="eur_kwh" type="number" inputmode="decimal" min="0.001" max="5" step="0.001" required>
+      </label>
+      <label class="field">
+        <span>Valido dal</span>
+        <input id="prezzoDal" name="dal" type="date" required>
+      </label>
+      <button class="btn btn-secondary" type="submit">Salva prezzo</button>
+    </form>
+    <p class="note mt">Ogni giorno usa il prezzo in vigore quel giorno. Le bollette già emesse non cambiano.</p>
+    <p class="kv-sub">Storico</p>
+    <dl id="storicoPrezzi" class="kv"></dl>
+  </section>
+</div>
 
-      <section class="details-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Prezzo dell'energia</p>
-            <h3 id="prezzoAttuale">—</h3>
-          </div>
-        </div>
-        <form id="prezzoForm" class="prezzo-form">
-          <label>
-            <span>€/kWh</span>
-            <input id="prezzoInput" name="eur_kwh" type="number" inputmode="decimal" min="0.001" max="5" step="0.001" required>
-          </label>
-          <label>
-            <span>Valido dal</span>
-            <input id="prezzoDal" name="dal" type="date" required>
-          </label>
-          <button class="secondary-button" type="submit">Salva prezzo</button>
-        </form>
-        <p class="stat-note">Ogni giorno usa il prezzo in vigore quel giorno. Le bollette già emesse non cambiano.</p>
-        <dl id="storicoPrezzi" class="details-list"></dl>
-      </section>
+<div id="chartTip" class="chart-tip hidden" role="status"></div>
+{% endblock %}
 
-      <section class="history-card">
-        <div class="section-heading">
-          <div>
-            <p class="section-label">Bollette bimestrali</p>
-            <h3>Emissione il 1° del bimestre successivo, alle 09:00</h3>
-          </div>
-        </div>
-        <div id="elencoBollette" class="event-list">
-          <p class="empty-state">Caricamento bollette…</p>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <span>RB-Vecchi</span>
-      <span>Consumi ricarica</span>
-    </footer>
-  </div>
-
-  <div id="chartTip" class="chart-tip hidden" role="status"></div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='ricarica.js') }}" defer></script>
-</body>
-</html>
+{% block scripts %}<script src="{{ url_for('static', filename='ricarica.js', v=asset_v) }}" defer></script>{% endblock %}

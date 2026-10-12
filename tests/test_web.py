@@ -144,12 +144,19 @@ def test_not_configured(tmp_path, monkeypatch) -> None:
     app, client, csrf = make_client(tmp_path, monkeypatch, telegram, telegram_chat_id="")
 
     response = post_test(client, csrf)
-    page = client.get("/").get_data(as_text=True)
+    page = client.get("/dettagli").get_data(as_text=True)
 
     assert response.status_code == 409
     assert telegram.calls == []
-    assert 'id="telegramTestButton" class="secondary-button" type="button" disabled' in page
+    assert 'id="telegramTestButton" class="btn btn-secondary" type="button" disabled' in page
     assert "Telegram non configurato" in page
+
+
+def test_configured_button_enabled(tmp_path, monkeypatch) -> None:
+    _, client, _ = make_client(tmp_path, monkeypatch, FakeTelegram())
+    page = client.get("/dettagli").get_data(as_text=True)
+    assert 'id="telegramTestButton" class="btn btn-secondary" type="button">' in page
+    assert TOKEN not in page
 
 
 def test_cooldown_after_success(tmp_path, monkeypatch) -> None:

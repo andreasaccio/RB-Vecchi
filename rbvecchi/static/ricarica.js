@@ -3,13 +3,14 @@
 // Pagina /ricarica: consumi, grafici, registro, prezzo e bollette. Tutti i testi
 // che arrivano dai dati passano da textContent; i grafici sono SVG con soli
 // attributi (niente stili in linea, per la Content-Security-Policy).
+// apiFetch, showToast, svgIcon, rigaElenco, vuoto, statoPresa, caricaOra e
+// csrfToken vengono da common.js.
 
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
-const NS = "http://www.w3.org/2000/svg";
+const NS = SVG_NS;
 const $ = (id) => document.getElementById(id);
 const tip = $("chartTip");
 let dati = null;
-let toastTimer = null;
+let comandi = [];
 let registroCompleto = false;
 const REGISTRO_BREVE = 10;
 
@@ -70,31 +71,27 @@ const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ot
 const MESI_LUNGHI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
   "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 
-// ---------------------------------------------------------------- rete
+// ---------------------------------------------------------------- presa adesso
 
-async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "same-origin",
-    ...options,
-    headers: { Accept: "application/json", ...(options.headers || {}) },
-  });
-  if (response.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Sessione scaduta");
-  }
-  const payload = await response.json().catch(() => ({ ok: false, error: "Risposta non valida" }));
-  if (!response.ok || payload.ok === false) throw new Error(payload.error || `Errore HTTP ${response.status}`);
-  return payload;
+function renderPresa(c) {
+  const ok = c?.stato === "ok";
+  $("caricaCard").classList.toggle("carica-non_disponibile", !ok);
+  const presa = statoPresa(c);
+  impostaChip($("caricaChip"), presa.testo, presa.tono);
+  $("caricaAge").textContent = c?.eta_s === null || c?.eta_s === undefined ? "" : `agg. ${durata(c.eta_s)} fa`;
+  $("caricaPower").textContent = ok ? new Intl.NumberFormat("it-IT").format(Math.round(c.potenza_W)) : "—";
+  let nota = ok ? (c.nota || (Math.round(c.potenza_W) === 0 ? "Nessun assorbimento" : "Potenza assorbita dal caricabatterie"))
+    : `Non disponibile: ${c?.motivo || "dati della ricarica assenti"}.`;
+  if (ok && c.avviso) nota = `Attenzione: ${c.avviso}`;
+  $("caricaNote").textContent = nota;
 }
 
-function showToast(message, isError = false) {
-  const toast = $("toast");
-  clearTimeout(toastTimer);
-  toast.textContent = message;
-  toast.classList.toggle("error", isError);
-  toast.classList.add("visible");
-  toastTimer = setTimeout(() => toast.classList.remove("visible"), 3600);
+async function caricaPresa() {
+  try {
+    renderPresa((await apiFetch("/api/carica")).carica);
+  } catch (error) {
+    renderPresa({ stato: "non_disponibile", motivo: "dati non raggiungibili dalla pagina" });
+  }
 }
 
 // ---------------------------------------------------------------- tooltip
@@ -103,7 +100,7 @@ function mostraTip(righe, x, y) {
   tip.replaceChildren(...righe.map((testo, i) => {
     const el = document.createElement(i === 0 ? "strong" : "span");
     el.textContent = testo;
-    if (i > 0) el.append(document.createElement("br"));
+    if (i > 0 && i < righe.length - 1) el.append(document.createElement("br"));
     return el;
   }));
   tip.classList.remove("hidden");
@@ -401,38 +398,51 @@ function tempo(dt, testo) {
   return div;
 }
 
+function rigaComando(c) {
+  return rigaElenco({
+    icona: "bolt",
+    tono: c.ok ? "info" : "err",
+    titolo: c.ok ? "Carica ora dall'app" : "Carica ora non riuscita",
+    sotto: `${giornoBreve(c.ts)} alle ${ora(c.ts, true)}${c.dettaglio ? ` · ${c.dettaglio}` : ""}`,
+  });
+}
+
 function renderRegistro(sessioni) {
   const box = $("registroDettagliato");
-  if (!sessioni.length) {
-    const p = document.createElement("p");
-    p.className = "empty-state";
-    p.textContent = "Nessuna accensione registrata.";
-    box.replaceChildren(p);
+  // i comandi più vecchi della prima sessione in elenco restano fuori
+  const limite = sessioni.length ? sessioni[sessioni.length - 1].inizio - 3600 : 0;
+  const voci = [
+    ...sessioni.map((s) => ({ ts: s.inizio, s })),
+    ...comandi.filter((c) => c.ts >= limite).map((c) => ({ ts: c.ts, c })),
+  ].sort((a, b) => b.ts - a.ts);
+  if (!voci.length) {
+    box.replaceChildren(vuoto("Nessuna accensione registrata."));
     return;
   }
-  const visibili = registroCompleto ? sessioni : sessioni.slice(0, REGISTRO_BREVE);
-  box.replaceChildren(...visibili.map((s) => {
+  const visibili = registroCompleto ? voci : voci.slice(0, REGISTRO_BREVE);
+  box.replaceChildren(...visibili.map(({ s, c }) => {
+    if (c) return rigaComando(c);
     const art = document.createElement("article");
     art.className = "sessione";
     const testa = document.createElement("div");
     testa.className = "sessione-testa";
     const titolo = document.createElement("strong");
     if (s.esito === "in_corso") titolo.textContent = s.in_carica ? "In carica" : "Presa accesa";
-    else if (s.carica_da) titolo.textContent = `Carica · ${kwh(s.energia_Wh / 1000, 3)} · ${euro(s.euro)}`;
+    else if (s.carica_da) titolo.textContent = `${kwh(s.energia_Wh / 1000, 3)} · ${euro(s.euro)}`;
     else titolo.textContent = `Niente da caricare · ${kwh(s.energia_Wh / 1000, 3)}`;
     const quando = document.createElement("span");
     quando.textContent = giornoBreve(s.inizio);
     testa.append(titolo, quando);
 
     const dl = document.createElement("dl");
-    dl.className = "sessione-tempi";
+    dl.className = "tempi";
     const circa = (flag) => (flag ? " ~" : "");
     dl.append(
-      tempo("Accesa", `${ora(s.inizio, true)}${circa(s.inizio_approssimato)}`),
-      tempo("Inizio carica", s.carica_da ? ora(s.carica_da, true) : "—"),
-      tempo("Fine carica", s.carica_a && s.esito !== "in_corso" ? ora(s.carica_a, true)
-        : s.carica_a ? "in corso" : "—"),
-      tempo("Spenta", s.fine ? `${ora(s.fine, true)}${circa(s.fine_approssimata)}` : "—"),
+      tempo("Accesa", `${ora(s.inizio)}${circa(s.inizio_approssimato)}`),
+      tempo("In carica", !s.carica_da ? "—"
+        : s.carica_a && s.esito !== "in_corso" ? `${ora(s.carica_da)}–${ora(s.carica_a)}`
+          : `dalle ${ora(s.carica_da)}`),
+      tempo("Spenta", s.fine ? `${ora(s.fine)}${circa(s.fine_approssimata)}` : "—"),
     );
     const nota = document.createElement("p");
     nota.className = "sessione-nota";
@@ -440,15 +450,21 @@ function renderRegistro(sessioni) {
     if (s.fine) parti.push(`durata ${durata(s.fine - s.inizio)}`);
     if (s.carica_da) parti.push(`picco ${numero(s.potenza_max_W, 0)} W`);
     nota.textContent = parti.join(" · ");
-    art.append(testa, dl, nota);
+    const icona = document.createElement("div");
+    const tono = s.esito === "in_corso" ? "info" : s.carica_da ? "ok" : "";
+    icona.className = `row-icon${tono ? ` ${tono}` : ""}`;
+    icona.append(svgIcon(s.carica_da || s.esito === "in_corso" ? "bolt" : "power"));
+    const corpo = document.createElement("div");
+    corpo.append(testa, dl, nota);
+    art.append(icona, corpo);
     return art;
   }));
-  if (sessioni.length > REGISTRO_BREVE) {
+  if (voci.length > REGISTRO_BREVE) {
     const altre = document.createElement("button");
     altre.type = "button";
-    altre.className = "secondary-button registro-altre";
-    altre.textContent = registroCompleto ? "Mostra solo le ultime 10"
-      : `Mostra tutte le ${sessioni.length} accensioni`;
+    altre.className = "link-more rows-more";
+    altre.textContent = registroCompleto ? `Mostra solo le ultime ${REGISTRO_BREVE} voci`
+      : `Mostra tutte le ${voci.length} voci`;
     altre.addEventListener("click", () => {
       registroCompleto = !registroCompleto;
       renderRegistro(sessioni);
@@ -478,19 +494,17 @@ function renderPrezzo(d) {
 function renderBollette(bollette) {
   const box = $("elencoBollette");
   if (!bollette.length) {
-    const p = document.createElement("p");
-    p.className = "empty-state";
-    p.textContent = "Nessuna bolletta.";
-    box.replaceChildren(p);
+    box.replaceChildren(vuoto("Nessuna bolletta."));
     return;
   }
   box.replaceChildren(...bollette.map((b) => {
     const riga = document.createElement("article");
     riga.className = "bolletta";
     const testo = document.createElement("div");
-    const titolo = document.createElement("strong");
+    const titolo = document.createElement("p");
+    titolo.className = "bolletta-titolo";
     titolo.textContent = b.titolo.charAt(0).toUpperCase() + b.titolo.slice(1);
-    const stato = document.createElement("span");
+    const stato = document.createElement("p");
     stato.className = "bolletta-stato";
     if (b.stato === "in_corso") stato.textContent = "Bimestre in corso: anteprima";
     else if (b.stato === "da_emettere") stato.textContent = "Da emettere: invio automatico il 1° del bimestre alle 09:00";
@@ -499,7 +513,7 @@ function renderBollette(bollette) {
       stato.classList.add("ok");
     } else {
       stato.textContent = `Non inviata${b.ultimo_esito ? `: ${b.ultimo_esito}` : ""}`;
-      stato.classList.add("errore");
+      stato.classList.add("err");
     }
     if (b.parziale) stato.textContent += " · periodo parziale";
     testo.append(titolo, stato);
@@ -514,17 +528,17 @@ function renderBollette(bollette) {
     const azioni = document.createElement("div");
     azioni.className = "bolletta-azioni";
     const pdf = document.createElement("a");
-    pdf.className = "secondary-button";
+    pdf.className = "btn btn-secondary";
     pdf.href = `/ricarica/bolletta/${encodeURIComponent(b.periodo)}.pdf`;
     pdf.target = "_blank";
     pdf.rel = "noopener";
-    pdf.textContent = b.stato === "in_corso" || b.stato === "da_emettere" ? "Anteprima PDF" : "PDF";
+    pdf.append(svgIcon("file"), b.stato === "in_corso" || b.stato === "da_emettere" ? "Anteprima PDF" : "PDF");
     azioni.append(pdf);
     if (b.stato !== "in_corso") {
       const invia = document.createElement("button");
       invia.type = "button";
-      invia.className = "secondary-button";
-      invia.textContent = b.stato === "inviata" ? "Reinvia su Telegram" : "Invia su Telegram";
+      invia.className = "btn btn-secondary";
+      invia.append(svgIcon("send"), b.stato === "inviata" ? "Reinvia su Telegram" : "Invia su Telegram");
       invia.addEventListener("click", () => inviaBolletta(b, invia));
       azioni.append(invia);
     }
@@ -583,18 +597,32 @@ function disegna() {
 
 async function carica() {
   try {
-    dati = await apiFetch("/api/ricarica");
+    const [consumi, registro] = await Promise.all([
+      apiFetch("/api/ricarica"),
+      apiFetch("/api/carica/registro").catch(() => ({ comandi: [] })),
+    ]);
+    comandi = Array.isArray(registro.comandi) ? registro.comandi : [];
+    dati = consumi;
     disegna();
   } catch (error) {
     showToast(error.message || "Aggiornamento non riuscito", true);
   }
 }
 
-$("refreshButton").addEventListener("click", carica);
+$("refreshButton").addEventListener("click", () => { caricaPresa(); carica(); });
+$("caricaOraButton").addEventListener("click", () => {
+  caricaOra($("caricaOraButton"), () => {
+    setTimeout(caricaPresa, 3000);
+    setTimeout(carica, 3000);
+    setTimeout(carica, 70000);
+  });
+});
 let ridimensiona = null;
 window.addEventListener("resize", () => {
   clearTimeout(ridimensiona);
   ridimensiona = setTimeout(() => { if (dati) renderGrafici(dati); }, 150);
 });
+caricaPresa();
 carica();
+setInterval(caricaPresa, 10000);
 setInterval(carica, 60000);

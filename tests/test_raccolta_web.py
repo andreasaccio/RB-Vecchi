@@ -237,8 +237,10 @@ def test_riepilogo_dettagli_adattatori(tmp_path: Path) -> None:
 def test_pagina_principale_senza_scheda_dispositivo(tmp_path: Path) -> None:
     html = client(tmp_path).get("/").get_data(as_text=True)
     assert 'id="caricaCard"' in html and 'href="/dettagli"' in html
+    # pagina principale essenziale: il test Telegram è nella pagina Impianto,
+    # il registro della ricarica nella pagina Ricarica
     for tolto in ("Dispositivo", 'id="wifiSignal"', 'id="temperature"', 'id="inputState"',
-                  "secondary-metrics"):
+                  "secondary-metrics", 'id="telegramTestButton"', 'id="caricaRegistro"'):
         assert tolto not in html
 
 
@@ -248,9 +250,14 @@ def test_pagina_dettagli(tmp_path: Path) -> None:
     r = anonimo.get("/dettagli")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
-    html = client(tmp_path).get("/dettagli").get_data(as_text=True)
-    for sezione in ("sezBasculante", "sezRicarica", "sezPowerline", "sezRaspberry"):
+    segreti = {"web_password": "pw-SEGRETA-123", "secret_key": "sk-SEGRETA-456",
+               "telegram_bot_token": "777:tk-SEGRETO-789", "shelly_password": "sh-SEGRETA-000"}
+    cfg = replace(settings(tmp_path), raccolta_dir=tmp_path, **segreti)
+    c = create_app(cfg, start_monitor=False).test_client()
+    c.post("/login", data={"username": "admin", "password": segreti["web_password"]})
+    html = c.get("/dettagli").get_data(as_text=True)
+    for sezione in ("sezBasculante", "sezRicarica", "sezPowerline", "sezRaspberry", "sezNotifiche"):
         assert f'id="{sezione}"' in html
     assert 'data-indirizzo="192.168.1.100"' in html and 'data-avviso="5"' in html
-    for segreto in ("password", "secret", "token"):         # dai Settings di prova
-        assert segreto not in html.lower()
+    for segreto in segreti.values():
+        assert segreto not in html
