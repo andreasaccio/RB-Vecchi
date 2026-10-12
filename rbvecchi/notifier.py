@@ -27,19 +27,30 @@ class TelegramNotifier:
         return bool(self.bot_token and self.chat_id)
 
     def send(self, message: str) -> None:
+        self._call(
+            "sendMessage",
+            json={
+                "chat_id": self.chat_id,
+                "text": message,
+                "disable_web_page_preview": True,
+            },
+        )
+
+    def send_document(self, filename: str, content: bytes, caption: str = "") -> None:
+        """Documento (per esempio il PDF della bolletta) con didascalia, in una
+        sola chiamata: o arriva tutto o niente."""
+        self._call(
+            "sendDocument",
+            data={"chat_id": self.chat_id, "caption": caption[:1024]},
+            files={"document": (filename, content, "application/pdf")},
+        )
+
+    def _call(self, method: str, **kwargs) -> None:
         if not self.enabled:
             raise RuntimeError("Telegram non configurato")
-        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        url = f"https://api.telegram.org/bot{self.bot_token}/{method}"
         try:
-            response = requests.post(
-                url,
-                json={
-                    "chat_id": self.chat_id,
-                    "text": message,
-                    "disable_web_page_preview": True,
-                },
-                timeout=self.timeout,
-            )
+            response = requests.post(url, timeout=self.timeout, **kwargs)
         except requests.Timeout:
             raise TelegramError("Telegram non raggiungibile: timeout") from None
         except requests.RequestException as exc:

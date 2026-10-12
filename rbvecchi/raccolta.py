@@ -16,6 +16,7 @@ STATO_RETE = "stato-rete.json"
 CARICA = "carica-ultimo.json"
 SISTEMA = "sistema.json"
 REGISTRO_CARICA = "carica-registro.json"
+CONSUMI_CARICA = "carica-consumi.json"
 
 STATI_POWERLINE = {"stabile", "instabile", "interrotta", "non_disponibile"}
 MAX_ETA_POWERLINE = 300
@@ -26,6 +27,8 @@ MAX_SESSIONI = 50
 CAUSE = {"programma", "manuale", "ritorno_corrente", "gia_accesa"}
 ESITI = {"fine_carica", "senza_carica", "interrotta", "riavvio", "in_corso"}
 MAX_BYTE = 64 * 1024
+MAX_BYTE_CONSUMI = 512 * 1024
+MAX_ETA_CONSUMI = 300
 # Il relè lo apre lo script ricarica-notturna sullo Shelly a fine carica e lo
 # richiude alle 01:00 (o "Carica ora"): relè aperto è lo stato normale.
 NOTA_RELE_APERTO = ("presa spenta dal programma di ricarica: si riaccende alle 01:00 "
@@ -51,15 +54,15 @@ def _booleano(valore: Any) -> bool | None:
     return valore if isinstance(valore, bool) else None
 
 
-def _leggi(percorso: Path) -> dict[str, Any]:
+def _leggi(percorso: Path, massimo: int = MAX_BYTE) -> dict[str, Any]:
     try:
         with open(percorso, "rb") as f:
-            grezzo = f.read(MAX_BYTE + 1)
+            grezzo = f.read(massimo + 1)
     except FileNotFoundError:
         raise NonDisponibile("file della raccolta dati assente") from None
     except OSError:
         raise NonDisponibile("file della raccolta dati illeggibile") from None
-    if len(grezzo) > MAX_BYTE:
+    if len(grezzo) > massimo:
         raise NonDisponibile("file della raccolta dati non valido")
     try:
         dati = json.loads(grezzo.decode("utf-8"))
@@ -236,6 +239,56 @@ def leggi_registro_carica(percorso: Path, adesso: float | None = None) -> dict[s
     sessioni = [s for s in map(_sessione, grezze[:MAX_SESSIONI]) if s is not None]
     return {"stato": "ok", "motivo": "", "generato": generato, "eta_s": eta,
             "dal": _numero(dati.get("dal")), "sessioni": sessioni}
+
+
+def _giorno(riga: Any) -> list[Any] | None:
+    """["AAAA-MM-GG", Wh, lettura iniziale, lettura finale]"""
+    if (not isinstance(riga, list) or len(riga) != 4 or not isinstance(riga[0], str)
+            or len(riga[0]) != 10 or any(_numero(v) is None for v in riga[1:])):
+        return None
+    return [riga[0], riga[1], riga[2], riga[3]]
+
+
+def _profilo(dati: Any) -> dict[str, Any] | None:
+    if not isinstance(dati, dict) or _numero(dati.get("inizio")) is None:
+        return None
+    punti = dati.get("punti")
+    if not isinstance(punti, list):
+        return None
+    return {"inizio": dati["inizio"], "passo": _numero(dati.get("passo")),
+            "punti": [[p[0], p[1]] for p in punti
+                      if isinstance(p, list) and len(p) == 2
+                      and _numero(p[0]) is not None and _numero(p[1]) is not None]}
+
+
+def leggi_consumi(percorso: Path, adesso: float | None = None) -> dict[str, Any]:
+    """Wh per giorno, sessioni dal bimestre precedente e profilo dell'ultima carica
+    (raccolta/sessioni_carica.py)."""
+    adesso = time.time() if adesso is None else adesso
+    try:
+        dati = _leggi(percorso, MAX_BYTE_CONSUMI)
+        generato = _numero(dati.get("generato"))
+        eta = _eta(generato, adesso, MAX_ETA_CONSUMI, "consumi della ricarica")
+        giorni, sessioni = dati.get("giorni"), dati.get("sessioni")
+        if not isinstance(giorni, list) or not isinstance(sessioni, list):
+            raise NonDisponibile("file della raccolta dati non valido")
+    except NonDisponibile as e:
+        return {"stato": "non_disponibile", "motivo": str(e), "eta_s": None,
+                "giorni": [], "sessioni": [], "profilo": None, "contatore": None}
+    contatore = dati.get("contatore")
+    if isinstance(contatore, dict) and _numero(contatore.get("ts")) is not None \
+            and _numero(contatore.get("Wh")) is not None:
+        contatore = {"ts": contatore["ts"], "Wh": contatore["Wh"]}
+    else:
+        contatore = None
+    return {
+        "stato": "ok", "motivo": "", "generato": generato, "eta_s": eta,
+        "giorni": [g for g in map(_giorno, giorni) if g is not None],
+        "sessioni_dal": _numero(dati.get("sessioni_dal")),
+        "sessioni": [s for s in map(_sessione, sessioni) if s is not None],
+        "profilo": _profilo(dati.get("profilo")),
+        "contatore": contatore,
+    }
 
 
 # ---------------------------------------------------------------- Raspberry

@@ -62,6 +62,25 @@ class Database:
                     success INTEGER NOT NULL,
                     detail TEXT
                 );
+
+                -- Prezzo dell'energia della ricarica: vale dal giorno "dal"
+                -- (AAAA-MM-GG) fino al prezzo successivo.
+                CREATE TABLE IF NOT EXISTS tariffe (
+                    dal TEXT PRIMARY KEY,
+                    eur_kwh REAL NOT NULL,
+                    impostata_ts REAL NOT NULL
+                );
+
+                -- Bollette bimestrali: "dati" è la fotografia JSON fissata alla
+                -- prima emissione, così un PDF rigenerato è identico.
+                CREATE TABLE IF NOT EXISTS bollette (
+                    periodo TEXT PRIMARY KEY,
+                    creata_ts REAL NOT NULL,
+                    dati TEXT NOT NULL,
+                    inviata_ts REAL,
+                    tentativi INTEGER NOT NULL DEFAULT 0,
+                    ultimo_esito TEXT
+                );
                 """
             )
 
@@ -173,6 +192,57 @@ class Database:
             {"ts": row["command_ts"], "ok": bool(row["success"]), "dettaglio": row["detail"]}
             for row in rows
         ]
+
+    # ------------------------------------------------------------ ricarica
+
+    def list_tariffe(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT dal, eur_kwh, impostata_ts FROM tariffe ORDER BY dal ASC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_tariffa(self, dal: str, eur_kwh: float, now: float) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO tariffe(dal, eur_kwh, impostata_ts) VALUES (?, ?, ?) "
+                "ON CONFLICT(dal) DO UPDATE SET eur_kwh=excluded.eur_kwh, "
+                "impostata_ts=excluded.impostata_ts",
+                (dal, eur_kwh, now),
+            )
+
+    def get_bolletta(self, periodo: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT periodo, creata_ts, dati, inviata_ts, tentativi, ultimo_esito "
+                "FROM bollette WHERE periodo = ?",
+                (periodo,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def fissa_bolletta(self, periodo: str, dati: str, now: float) -> None:
+        """Salva la fotografia della bolletta solo se non esiste già."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO bollette(periodo, creata_ts, dati) VALUES (?, ?, ?)",
+                (periodo, now, dati),
+            )
+
+    def esito_bolletta(self, periodo: str, inviata: bool, esito: str, now: float) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE bollette SET tentativi = tentativi + 1, ultimo_esito = ?, "
+                "inviata_ts = CASE WHEN ? THEN ? ELSE inviata_ts END WHERE periodo = ?",
+                (esito[:500], int(inviata), now, periodo),
+            )
+
+    def list_bollette(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT periodo, creata_ts, dati, inviata_ts, tentativi, ultimo_esito "
+                "FROM bollette ORDER BY periodo DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def stats_between(self, start: float, end: float) -> dict[str, int]:
         if end <= start:

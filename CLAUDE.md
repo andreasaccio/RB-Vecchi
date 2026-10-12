@@ -9,7 +9,7 @@ del 25/09/2026 (periodo D-Link, storico).
 ## Vincoli
 - Il servizio gira da /opt/rb-vecchi come utente rbvecchi, NON da questo repository.
   La distribuzione avviene con update.sh sul Raspberry, non con git pull in /opt.
-- Il repository contiene 63 file; in produzione ne sono installati 25 in /opt/rb-vecchi
+- Il repository contiene 68 file; in produzione ne sono installati 29 in /opt/rb-vecchi
   (vedi install.sh) più 6 in /opt/rb-raccolta (vedi install-raccolta.sh).
 - Questo NON è un antifurto: serve a segnalare un basculante lasciato aperto per
   dimenticanza. Un buco di rete ritarda la segnalazione, non la annulla.
@@ -21,6 +21,8 @@ del 25/09/2026 (periodo D-Link, storico).
   1.7.5 installato, 2.0.0 disponibile).
 - Dal PC nessuna chiamata ai dispositivi reali della LAN (Shelly, adattatori,
   Raspberry) senza richiesta esplicita: i test girano su dati sintetici.
+- gunicorn deve restare a 1 worker (start.sh): il monitor del basculante e l'invio
+  delle bollette sono thread dentro il processo; con più worker partirebbero doppi.
 - Non simulare un'unità systemd lanciando il comando con systemd-run: se il comando
   è figlio diretto di systemd i privilegi possono differire da quelli dell'unità
   vera (caso di ping con NoNewPrivileges, 25/09). Si verifica l'uscita dell'unità vera.
@@ -43,11 +45,9 @@ del 25/09/2026 (periodo D-Link, storico).
 1. Notifica di irraggiungibilità CONDIZIONATA all'ultimo stato noto "aperto".
    Una notifica secca produrrebbe un messaggio al giorno: rumore inutile.
 2. Correzione di state_since dopo un periodo cieco (oggi sottostima la durata).
-3. Contabilizzazione ricarica quadriciclo con Shelly 1PM: usare SEMPRE il contatore
-   cumulativo del dispositivo, mai la somma dei campioni di potenza.
-4. verifica-produzione.sh non segnala i file del repository che mancano in
+3. verifica-produzione.sh non segnala i file del repository che mancano in
    /opt/rb-vecchi: percorre solo i file presenti in /opt.
-5. verifica-produzione.sh non confronta /etc/systemd/system/rb-vecchi.service
+4. verifica-produzione.sh non confronta /etc/systemd/system/rb-vecchi.service
    con il repository.
 
 ## Deploy
@@ -95,9 +95,19 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
     sessione va dalla chiusura all'apertura del relè; causa (programma /
     manuale / ritorno_corrente / gia_accesa), esito (fine_carica / senza_carica
     / interrotta / riavvio / in_corso), energia dal contatore. Un cambio che cade
-    in un buco di dati ha l'orario approssimato e così è marcato.
-  stato-rete.json, sistema.json e carica-registro.json li scrive il oneshot
-  rb-stato-rete.service, lanciato ogni 60 s da rb-stato-rete.timer.
+    in un buco di dati ha l'orario approssimato e così è marcato;
+  - carica-consumi.json: Wh per giorno (fino a 400 giorni) con le letture grezze
+    del contatore di inizio e fine giorno, sessioni dall'inizio del bimestre
+    precedente, profilo di potenza al minuto dell'ultima sessione con carica.
+    Wh SOLO dal contatore cumulativo aenergy (incrementi fra campioni ok, mai la
+    somma dei campioni di potenza; un contatore che cala non toglie energia),
+    attribuiti al giorno locale del campione che li registra.
+  sessioni_carica.py è incrementale: lo stato interno sta in carica-stato.json
+  (non per la dashboard) e a ogni giro legge solo i campioni nuovi; senza stato
+  valido riparte dagli ultimi 70 giorni di CSV.
+  stato-rete.json, sistema.json, carica-registro.json e carica-consumi.json li
+  scrive il oneshot rb-stato-rete.service, lanciato ogni 60 s da
+  rb-stato-rete.timer.
 - rbvecchi legge SOLO file della raccolta in /var/lib/rb-raccolta, in sola
   lettura (rbvecchi/raccolta.py), da endpoint separati: /api/powerline,
   /api/carica, /api/carica/registro, /api/sistema. Unica eccezione di rete:
@@ -106,12 +116,15 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   host CARICA_SHELLY_HOST, predefinito 192.168.1.101) e registra il comando nella
   tabella commands come CARICA_ON. Nessun altro client di rete dentro rbvecchi e
   nessuna chiamata in più allo Shelly .100: per il basculante si usa solo ciò
-  che il monitor legge già. Nessuna analisi in rbvecchi, nessun effetto su
-  /api/status, sul monitor o sulle notifiche. File assente, illeggibile, non
+  che il monitor legge già. Nessuna analisi dei campioni in rbvecchi: per la
+  contabilità (rbvecchi/bolletta.py) somma solo i Wh per giorno di
+  carica-consumi.json e applica il prezzo del giorno. Nessun effetto su
+  /api/status, sul monitor o sulle notifiche del basculante. File assente, illeggibile, non
   valido o vecchio (carica-ultimo.json 60 s, gli altri 5 minuti) =
   "non disponibile".
 - Pagine: principale (basculante, powerline, comando, ricarica con "Carica ora",
-  statistiche, registro eventi, registro ricarica) e
+  statistiche, registro eventi, registro ricarica), /ricarica (consumi, grafici,
+  registro dettagliato, prezzo, bollette) e
   /dettagli (Shelly basculante, Shelly ricarica, powerline, Raspberry), con la
   stessa autenticazione. Nessun segreto nelle pagine.
 - Il Wi-Fi dello Shelly misura solo il salto Shelly-AP, non la salute della
@@ -148,3 +161,25 @@ Se il commit stampato da verifica-produzione.sh non cambia, il deploy non è avv
   (uptime che cala) e l'azzeramento del contatore (totale che cala).
 - aenergy.total sopravvive a un'interruzione di corrente ma perde la frazione non
   ancora salvata (11/10/2026 alle 13:15: da 1301,66 a 1301,0 Wh).
+
+## Contabilità della ricarica e bolletta bimestrale
+- Prezzo €/kWh nella tabella tariffe del database di rbvecchi, modificabile da
+  /ricarica: ogni prezzo vale da una data (al più presto dall'inizio del bimestre
+  in corso) fino al successivo; senza prezzi vale 0,25 €/kWh. A ogni giorno si
+  applica il prezzo in vigore quel giorno.
+- Bollette per bimestri di calendario (gennaio-febbraio = AAAA-B1 ... novembre-
+  dicembre = AAAA-B6). Il thread InvioBollette (rbvecchi/bolletta.py, avviato
+  con il monitor) controlla ogni 15 minuti: dalle 09:00 del primo giorno del
+  bimestre emette quella del bimestre chiuso e la manda su Telegram
+  (TELEGRAM_CHAT_ID) con sendDocument: PDF e riepilogo in didascalia in una sola
+  chiamata. Aspetta un campione del contatore successivo alla fine del periodo,
+  al massimo 3 giorni; oltre 20 giorni dalla fine non invia più da solo (al primo
+  avvio non parte la bolletta di un bimestre vecchio): resta l'invio a mano.
+- Alla prima emissione la bolletta è fissata nella tabella bollette come
+  fotografia JSON: PDF rigenerati e reinvii sono identici anche se dopo cambiano
+  dati o prezzi. Se Telegram fallisce si riprova al controllo successivo.
+- PDF generato da rbvecchi/pdf.py senza dipendenze (Helvetica WinAnsi: accenti
+  ed euro). È un documento interno di ripartizione dei costi, non fiscale, e lo
+  dice nel piè di pagina.
+- Il giorno è la data locale del Raspberry (raccolta) e di TIMEZONE (rbvecchi):
+  devono coincidere (Europe/Rome).

@@ -50,7 +50,7 @@ class Shelly:
 
 def registro(tmp_path: Path, s: Shelly) -> list[dict]:
     scrivi(tmp_path, s.righe)
-    return sessioni_carica.registro(tmp_path, s.t)["sessioni"]
+    return sessioni_carica.aggiorna(tmp_path, s.t)[0]["sessioni"]
 
 
 def test_programma_carica_e_fine_carica(tmp_path: Path) -> None:
@@ -118,3 +118,89 @@ def test_main_scrive_json_atomico(tmp_path: Path) -> None:
     dati = json.loads(uscita.read_text())
     assert dati["generato"] == int(s.t) and dati["sessioni"][0]["causa"] == "programma"
     assert oct(os.stat(uscita).st_mode & 0o777) == "0o644"
+
+
+# ---------------------------------------------------------------- motore incrementale
+
+def consumi(tmp_path: Path, s: Shelly) -> dict:
+    scrivi(tmp_path, s.righe)
+    return sessioni_carica.aggiorna(tmp_path, s.t)[1]
+
+
+def test_a_rate_come_in_un_colpo(tmp_path: Path) -> None:
+    s = Shelly(UNA - 3600).per(3600, False).per(1800, True, 860.0).per(600, True, 7.8)
+    s.per(600, False).buco(300).per(300, True, 1.3).per(60, False)
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(), b.mkdir()
+    scrivi(a, s.righe), scrivi(b, s.righe)
+    for t in range(int(UNA - 3000), int(s.t), 997):     # un giro ogni ~17 min
+        sessioni_carica.aggiorna(a, t)
+    ra, ca = sessioni_carica.aggiorna(a, s.t)
+    rb, cb = sessioni_carica.aggiorna(b, s.t)
+    assert ra["sessioni"] == rb["sessioni"] and len(ra["sessioni"]) == 2
+    assert ca["giorni"] == cb["giorni"] and ca["profilo"] == cb["profilo"]
+
+
+def test_wh_per_giorno_e_letture(tmp_path: Path) -> None:
+    s = Shelly(UNA - 3 * 3600, energia=1000.0).per(3600, True, 7.8)   # 22:00-23:00 dell'11
+    s.per(7200, True, 860.0)                                             # 23:00-01:00
+    c = consumi(tmp_path, s)
+    (g1, wh1, prima1, ultima1), (g2, wh2, prima2, ultima2) = c["giorni"]
+    assert (g1, g2) == ("2026-10-11", "2026-10-12")
+    assert abs(wh1 - (7.8 * 3590 + 860 * 3600) / 3600) < 0.5     # il primo campione non ha incremento
+    assert abs(wh2 - 860.0) < 0.5
+    assert round(prima1) == 1000 and abs(ultima1 - prima2) < 2.5 and ultima2 == c["contatore"]["Wh"]
+
+
+def test_profilo_dell_ultima_carica_resta_dopo_una_sessione_senza_carica(tmp_path: Path) -> None:
+    s = Shelly(UNA - 60).per(60, False).per(300, True, 860.0).per(600, True, 7.8).per(60, False)
+    s.per(600, False).per(300, True, 1.3).per(60, False)
+    c = consumi(tmp_path, s)
+    assert c["sessioni"][0]["esito"] == "senza_carica"
+    p = c["profilo"]
+    assert p["inizio"] == int(UNA) and p["passo"] == 60
+    assert p["punti"][0] == [int(UNA), 860.0] and p["punti"][-1][1] == 7.8
+    assert len(p["punti"]) == 15
+
+
+def test_stato_corrotto_si_ricostruisce(tmp_path: Path) -> None:
+    s = Shelly(UNA - 60).per(60, False).per(300, True, 860.0).per(60, False)
+    scrivi(tmp_path, s.righe)
+    (tmp_path / sessioni_carica.STATO).write_text("{rotto")
+    registro, _ = sessioni_carica.aggiorna(tmp_path, s.t)
+    assert registro["sessioni"][0]["causa"] == "programma"
+    stato = json.loads((tmp_path / sessioni_carica.STATO).read_text())
+    assert stato["versione"] == sessioni_carica.VERSIONE_STATO
+
+
+def test_consumi_dal_bimestre_precedente(tmp_path: Path) -> None:
+    agosto = datetime(2026, 8, 20, 15, 0).timestamp()
+    settembre = datetime(2026, 9, 2, 15, 0).timestamp()
+    s = Shelly(agosto).per(60, False).per(120, True, 1.3).per(60, False)
+    s.t = settembre
+    s.per(60, False).per(120, True, 1.3).per(60, False)
+    s.t = UNA + 3600
+    s.per(60, False)
+    c = consumi(tmp_path, s)
+    # 12/10: bimestre in corso settembre-ottobre, precedente luglio-agosto
+    assert c["sessioni_dal"] == int(datetime(2026, 7, 1).timestamp())
+    assert len(c["sessioni"]) == 2
+
+
+def test_bimestre_precedente_a_cavallo_d_anno() -> None:
+    gennaio = datetime(2027, 1, 15).timestamp()
+    assert sessioni_carica.inizio_bimestre_precedente(gennaio) == datetime(2026, 11, 1).timestamp()
+    marzo = datetime(2027, 3, 1, 0, 30).timestamp()
+    assert sessioni_carica.inizio_bimestre_precedente(marzo) == datetime(2027, 1, 1).timestamp()
+
+
+def test_archivio_potato(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(sessioni_carica, "ARCHIVIO_GIORNI", 1)
+    s = Shelly(UNA - 3 * 86400).per(60, False).per(120, True, 1.3).per(60, False)
+    s.t = UNA
+    s.per(60, False).per(120, True, 1.3).per(60, False)
+    scrivi(tmp_path, s.righe)
+    sessioni_carica.aggiorna(tmp_path, UNA - 3 * 86400 + 600)        # prima sessione nello stato
+    _, c = sessioni_carica.aggiorna(tmp_path, s.t)
+    stato = json.loads((tmp_path / sessioni_carica.STATO).read_text())
+    assert len(stato["chiuse"]) == 1 and all(g >= "2026-10-11" for g in stato["giorni"])

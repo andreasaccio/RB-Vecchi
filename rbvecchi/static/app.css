@@ -348,3 +348,66 @@ footer { display: flex; justify-content: space-between; gap: 12px; padding: 22px
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* ---------------------------------------------------------------- consumi ricarica */
+.carica-link { display: inline-block; margin-top: 12px; color: var(--primary); font-size: 0.86rem; font-weight: 720; text-decoration: none; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stat-tile { padding: 14px; border-radius: var(--radius-md); background: #f6f8fb; }
+.stat-tile-wide { grid-column: 1 / -1; }
+.stat-tile strong { display: block; margin-top: 8px; font-size: clamp(1.3rem, 5vw, 1.75rem); letter-spacing: -0.03em; }
+.stat-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 0.86rem; font-weight: 650; }
+.stat-note { margin: 12px 0 0; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: #c7ccd4; stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .bar { fill: var(--primary); }
+.chart .bar.attivo { fill: var(--primary-dark); }
+.chart .hit { fill: transparent; cursor: pointer; }
+.chart .hit:focus { outline: none; }
+.chart .linea { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .area { fill: var(--primary); fill-opacity: 0.1; }
+.chart .mirino { stroke: #98a2b3; stroke-width: 1; }
+.chart .punto { fill: var(--primary); stroke: var(--surface-solid); stroke-width: 2; }
+.chart .etichetta { fill: var(--text); font-size: 11px; font-weight: 700; }
+.chart-vuoto { margin: 10px 0; color: var(--muted); text-align: center; }
+.chart-tip { position: fixed; z-index: 90; padding: 8px 10px; border-radius: 10px; background: #111827; color: #fff; box-shadow: 0 10px 28px rgba(17,24,39,0.25); font-size: 0.8rem; line-height: 1.35; pointer-events: none; white-space: nowrap; }
+.chart-tip strong { display: block; font-size: 0.95rem; }
+.chart-table { margin-top: 10px; }
+.chart-table summary { cursor: pointer; color: var(--primary); font-size: 0.85rem; font-weight: 720; }
+.chart-table table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { padding: 6px 4px; border-top: 1px solid var(--line); text-align: right; }
+.chart-table th:first-child, .chart-table td:first-child { text-align: left; }
+.chart-table th { color: var(--muted); font-weight: 700; }
+
+.sessione { padding: 14px 0; border-top: 1px solid var(--line); }
+.sessione-testa { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sessione-testa strong { font-size: 0.98rem; }
+.sessione-testa span { color: var(--muted); font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.sessione-tempi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 9px 0 0; }
+.sessione-tempi div { padding: 7px 8px; border-radius: 10px; background: #f6f8fb; }
+.sessione-tempi dt { color: var(--muted); font-size: 0.72rem; font-weight: 700; }
+.sessione-tempi dd { margin: 2px 0 0; font-size: 0.86rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sessione-nota { margin: 7px 0 0; color: var(--muted); font-size: 0.8rem; }
+.registro-altre { justify-self: start; margin-top: 12px; }
+
+.prezzo-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.prezzo-form label { display: grid; gap: 4px; color: var(--muted); font-size: 0.78rem; font-weight: 700; }
+.prezzo-form input { min-height: 38px; padding: 7px 10px; border: 1px solid #d0d5dd; border-radius: 10px; background: #fff; color: var(--text); font-size: 0.95rem; }
+.prezzo-form input[type="number"] { width: 110px; }
+
+.bolletta { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.bolletta strong { display: block; }
+.bolletta-stato { display: block; margin-top: 3px; color: var(--muted); font-size: 0.82rem; }
+.bolletta-stato.ok { color: var(--success); font-weight: 700; }
+.bolletta-stato.errore { color: var(--danger); font-weight: 700; }
+.bolletta-importo { text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
+.bolletta-importo small { display: block; color: var(--muted); font-weight: 650; }
+.bolletta-azioni { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.bolletta-azioni a { text-decoration: none; }
+
+@media (max-width: 540px) {
+  .sessione-tempi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

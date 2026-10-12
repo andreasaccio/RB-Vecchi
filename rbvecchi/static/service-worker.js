@@ -1,9 +1,10 @@
 "use strict";
-const CACHE_NAME = "rb-vecchi-static-v8";
+const CACHE_NAME = "rb-vecchi-static-v9";
 const STATIC_ASSETS = [
   "/static/app.css",
   "/static/app.js",
   "/static/dettagli.js",
+  "/static/ricarica.js",
   "/static/icon-180.png",
   "/static/icon-192.png",
   "/static/icon-512.png",

@@ -106,7 +106,7 @@ t0=$(date +%s)
 systemctl start rb-stato-rete.service || true
 t1=$(date +%s)
 echo "rb-stato-rete.service: giro completo in $((t1 - t0)) s"
-for j in stato-rete.json sistema.json carica-ultimo.json carica-registro.json; do
+for j in stato-rete.json sistema.json carica-ultimo.json carica-registro.json carica-consumi.json; do
   g=$(sed -n 's/^ "generato": \([0-9]*\).*$/\1/p' "$DATA_DIR/$j" 2>/dev/null)
   if [ -n "$g" ] && [ "$((t1 - g))" -le 60 ]; then
     echo "$j: scritto $((t1 - g)) s fa"

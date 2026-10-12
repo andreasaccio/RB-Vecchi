@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import math
 import secrets
 import threading
 import time
-from datetime import datetime, time as dt_time
+from datetime import date, datetime, time as dt_time, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
+    Response,
     abort,
     jsonify,
     redirect,
@@ -25,13 +27,15 @@ from .config import Settings, load_settings
 from .db import Database
 from .monitor import GarageMonitor
 from .notifier import TelegramError, TelegramNotifier
-from . import raccolta
+from . import bolletta, raccolta
 from .shelly import PresaRicarica, ShellyClient, ShellyError
 
 LOGGER = logging.getLogger(__name__)
 
 TELEGRAM_TEST_COOLDOWN_SECONDS = 30.0
 CARICA_COOLDOWN_SECONDS = 30.0
+BOLLETTA_COOLDOWN_SECONDS = 30.0
+PREZZO_MASSIMO = 5.0
 
 TELEGRAM_ERROR_HINTS = {
     401: "Token del bot non valido: controllare TELEGRAM_BOT_TOKEN.",
@@ -71,12 +75,21 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
         settings.telegram_chat_id,
     )
     monitor = GarageMonitor(settings, database, shelly, notifier)
+    bollette = bolletta.InvioBollette(
+        database,
+        notifier,
+        lambda: raccolta.leggi_consumi(settings.raccolta_dir / raccolta.CONSUMI_CARICA),
+        settings.timezone,
+        settings.app_name,
+    )
     if start_monitor:
         monitor.start()
+        bollette.start()
 
     app.extensions["settings"] = settings
     app.extensions["database"] = database
     app.extensions["garage_monitor"] = monitor
+    app.extensions["bollette"] = bollette
 
     def authenticated() -> bool:
         return not settings.web_auth_enabled or session.get("authenticated") is True
@@ -268,6 +281,170 @@ def create_app(settings: Settings | None = None, start_monitor: bool = True) -> 
                    "Presa accesa: se l'auto ha bisogno di carica parte subito, "
                    "altrimenti lo Shelly la rispegne entro 5 minuti")
         return jsonify({"ok": True, "message": message, "era_accesa": era_accesa})
+
+    # ------------------------------------------------------------ consumi e bollette
+
+    tz = ZoneInfo(settings.timezone)
+
+    @app.get("/ricarica")
+    @login_required
+    def ricarica():
+        return render_template("ricarica.html", app_name=settings.app_name,
+                               csrf_token=ensure_csrf())
+
+    def scheda_bolletta(periodo: bolletta.Periodo, b: dict | None, riga: dict | None,
+                        stato: str) -> dict:
+        return {
+            "periodo": periodo.id, "titolo": periodo.titolo, "stato": stato,
+            "kWh": b["kWh"] if b else None, "euro": b["euro"] if b else None,
+            "parziale": b["parziale"] if b else None,
+            "emessa": b["emessa"] if b and riga else None,
+            "inviata_ts": riga["inviata_ts"] if riga else None,
+            "tentativi": riga["tentativi"] if riga else 0,
+            "ultimo_esito": riga["ultimo_esito"] if riga else None,
+        }
+
+    @app.get("/api/ricarica")
+    @login_required
+    def api_ricarica():
+        adesso = time.time()
+        oggi = datetime.fromtimestamp(adesso, tz).date()
+        try:
+            consumi = raccolta.leggi_consumi(settings.raccolta_dir / raccolta.CONSUMI_CARICA)
+        except Exception:
+            LOGGER.exception("Lettura dei consumi della ricarica fallita")
+            consumi = {"stato": "non_disponibile", "motivo": "errore interno di lettura",
+                       "eta_s": None, "giorni": [], "sessioni": [], "profilo": None,
+                       "contatore": None}
+        tariffe = database.list_tariffe()
+
+        giorni, mesi = [], {}
+        for giorno, wh, _, _ in consumi["giorni"]:
+            kwh = wh / 1000
+            euro = kwh * bolletta.prezzo_del_giorno(tariffe, giorno)
+            giorni.append({"giorno": giorno, "kWh": round(kwh, 3), "euro": round(euro, 4)})
+            m = mesi.setdefault(giorno[:7], {"mese": giorno[:7], "kWh": 0.0, "euro": 0.0})
+            m["kWh"] += kwh
+            m["euro"] += euro
+        for s in consumi["sessioni"]:
+            giorno = datetime.fromtimestamp(s["inizio"], tz).date().isoformat()
+            s["euro"] = round((s["energia_Wh"] or 0) / 1000
+                              * bolletta.prezzo_del_giorno(tariffe, giorno), 4)
+
+        corrente = bolletta.Periodo.da_data(oggi)
+        schede = []
+        anteprima = (bolletta.calcola(consumi, tariffe, corrente, adesso, tz)
+                     if consumi["stato"] == "ok" else None)
+        schede.append(scheda_bolletta(corrente, anteprima, None, "in_corso"))
+        emesse = {r["periodo"]: r for r in database.list_bollette()}
+        precedente = corrente.precedente()
+        if precedente.id not in emesse:
+            b = (bolletta.calcola(consumi, tariffe, precedente, adesso, tz)
+                 if consumi["stato"] == "ok" else None)
+            if b and b["giorni"]:
+                schede.append(scheda_bolletta(precedente, b, None, "da_emettere"))
+        for periodo_id, riga in emesse.items():
+            b = json.loads(riga["dati"])
+            stato = "inviata" if riga["inviata_ts"] else "non_inviata"
+            schede.append(scheda_bolletta(bolletta.Periodo.da_id(periodo_id), b, riga, stato))
+
+        oggi_txt = oggi.isoformat()
+        riepilogo = {
+            "oggi": next(({"kWh": g["kWh"], "euro": g["euro"]} for g in giorni
+                          if g["giorno"] == oggi_txt), {"kWh": 0.0, "euro": 0.0}),
+            "mese": {k: round(v, 3) for k, v in mesi.get(oggi_txt[:7], {"kWh": 0.0, "euro": 0.0}).items()
+                     if k != "mese"},
+            "bimestre": {"periodo": corrente.id, "titolo": corrente.titolo,
+                         "kWh": anteprima["kWh"] if anteprima else None,
+                         "euro": anteprima["euro"] if anteprima else None},
+        }
+        return jsonify({
+            "ok": True,
+            "consumi": {k: consumi.get(k) for k in ("stato", "motivo", "eta_s", "sessioni",
+                                                     "profilo", "contatore")},
+            "giorni": giorni,
+            "mesi": [{"mese": m["mese"], "kWh": round(m["kWh"], 3), "euro": round(m["euro"], 2)}
+                     for m in sorted(mesi.values(), key=lambda m: m["mese"])],
+            "riepilogo": riepilogo,
+            "tariffe": tariffe,
+            "prezzo_attuale": bolletta.prezzo_del_giorno(tariffe, oggi_txt),
+            "prezzo_predefinito": bolletta.PREZZO_PREDEFINITO,
+            "prezzo_dal_minimo": corrente.dal.isoformat(),
+            "bollette": schede,
+        })
+
+    @app.post("/api/ricarica/prezzo")
+    @login_required
+    def api_ricarica_prezzo():
+        require_csrf()
+        dati = request.get_json(silent=True) or {}
+        oggi = datetime.now(tz).date()
+        minimo = bolletta.Periodo.da_data(oggi).dal
+        try:
+            prezzo = float(str(dati.get("eur_kwh", "")).replace(",", "."))
+            dal = date.fromisoformat(str(dati.get("dal") or oggi.isoformat()))
+        except ValueError:
+            return jsonify({"ok": False, "error": "Prezzo o data non validi"}), 400
+        if not (0 < prezzo <= PREZZO_MASSIMO) or math.isnan(prezzo):
+            return jsonify({"ok": False,
+                            "error": f"Il prezzo deve essere fra 0 e {PREZZO_MASSIMO:.0f} €/kWh"}), 400
+        if dal < minimo:
+            return jsonify({"ok": False, "error": "Il prezzo può valere al più presto dall'inizio "
+                            f"del bimestre in corso ({minimo:%d/%m/%Y})"}), 400
+        if dal > oggi + timedelta(days=366):
+            return jsonify({"ok": False, "error": "Data troppo lontana"}), 400
+        database.set_tariffa(dal.isoformat(), round(prezzo, 4), time.time())
+        LOGGER.info("Prezzo della ricarica: %.4f €/kWh dal %s", prezzo, dal)
+        return jsonify({"ok": True, "message": f"Prezzo {prezzo:.3f} €/kWh dal {dal:%d/%m/%Y}"
+                        .replace(".", ",", 1), "tariffe": database.list_tariffe()})
+
+    def periodo_o_404(periodo_id: str) -> bolletta.Periodo:
+        try:
+            return bolletta.Periodo.da_id(periodo_id)
+        except ValueError:
+            abort(404)
+
+    @app.get("/ricarica/bolletta/<periodo_id>.pdf")
+    @login_required
+    def ricarica_bolletta_pdf(periodo_id: str):
+        periodo = periodo_o_404(periodo_id)
+        b = bollette.fotografia(periodo)
+        anteprima = b is None
+        if b is None:
+            b = bollette.anteprima(periodo, time.time())
+        if b is None or not b["giorni"]:
+            return jsonify({"ok": False, "error": "Nessun dato per il periodo"}), 409
+        risposta = Response(bollette.pdf(b, anteprima), mimetype="application/pdf")
+        risposta.headers["Content-Disposition"] = (
+            f'inline; filename="{bolletta.nome_file(b)}"')
+        return risposta
+
+    bolletta_lock = threading.Lock()
+    ultimo_invio_bolletta = -BOLLETTA_COOLDOWN_SECONDS
+
+    @app.post("/api/ricarica/bolletta/<periodo_id>/invia")
+    @login_required
+    def api_ricarica_bolletta_invia(periodo_id: str):
+        nonlocal ultimo_invio_bolletta
+        require_csrf()
+        periodo = periodo_o_404(periodo_id)
+        adesso = time.time()
+        if periodo.fine_ts(tz) > adesso:
+            return jsonify({"ok": False, "error": "Il bimestre non è ancora finito"}), 409
+        if not notifier.enabled:
+            return jsonify({"ok": False, "error": "Telegram non configurato"}), 409
+        with bolletta_lock:
+            restante = BOLLETTA_COOLDOWN_SECONDS - (time.monotonic() - ultimo_invio_bolletta)
+            if restante > 0:
+                return jsonify({"ok": False, "error": f"Attendere {math.ceil(restante)} s"}), 429
+            ultimo_invio_bolletta = time.monotonic()
+        b = bollette.emetti(periodo, adesso)
+        if b is None:
+            return jsonify({"ok": False, "error": "Nessun dato per il periodo"}), 409
+        ok, esito = bollette.invia(b, adesso)
+        if not ok:
+            return jsonify({"ok": False, "error": esito}), 502
+        return jsonify({"ok": True, "message": f"Bolletta {periodo.titolo} inviata su Telegram"})
 
     @app.get("/api/events")
     @login_required

@@ -68,7 +68,7 @@ done
 # File letti dalla dashboard: età e stato. Oltre il limite la dashboard mostra
 # "non disponibile" (carica-ultimo.json 60 s, gli altri 5 minuti).
 echo "timer rb-stato-rete: $(systemctl show rb-stato-rete.timer -p ActiveState --value)"
-for voce in stato-rete.json:300 sistema.json:300 carica-ultimo.json:60 carica-registro.json:300; do
+for voce in stato-rete.json:300 sistema.json:300 carica-ultimo.json:60 carica-registro.json:300 carica-consumi.json:300; do
   j=$DATI/${voce%:*}; limite=${voce#*:}
   if [ ! -r "$j" ]; then
     echo "!!! MANCA $j"; continue

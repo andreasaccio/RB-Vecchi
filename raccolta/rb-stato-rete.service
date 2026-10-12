@@ -1,5 +1,5 @@
 [Unit]
-Description=RB-Vecchi raccolta: riepilogo powerline, registro ricarica e stato del Raspberry per la dashboard
+Description=RB-Vecchi raccolta: riepilogo powerline, registro e consumi della ricarica, stato del Raspberry per la dashboard
 After=rb-link.service rb-carica.service
 
 [Service]
@@ -14,7 +14,7 @@ UMask=0022
 # la dashboard riconosce un file non aggiornato dalla sua età.
 ExecStart=-/usr/bin/python3 /opt/rb-raccolta/stato_rete.py --json --uscita /var/lib/rb-raccolta/stato-rete.json
 ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sistema.py --uscita /var/lib/rb-raccolta/sistema.json
-ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sessioni_carica.py --uscita /var/lib/rb-raccolta/carica-registro.json
+ExecStart=-/usr/bin/python3 /opt/rb-raccolta/sessioni_carica.py --uscita /var/lib/rb-raccolta/carica-registro.json --consumi /var/lib/rb-raccolta/carica-consumi.json
 TimeoutStartSec=50
 
 NoNewPrivileges=true
